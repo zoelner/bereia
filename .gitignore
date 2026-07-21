@@ -1,0 +1,27 @@
+# dependências / build
+node_modules/
+dist/
+*.tsbuildinfo
+
+# ambiente
+.env
+.env.local
+
+# dados: fontes brutas e derivados ficam fora do Git (JSONL canônico é versionado)
+data/sources/**
+!data/sources/.gitkeep
+!data/sources/**/LICENSE.txt
+data/derived/**
+!data/derived/.gitkeep
+
+# modelos / caches
+models/
+__pycache__/
+*.pyc
+.venv/
+
+# config local
+.claude/settings.local.json
+
+# logs
+*.log
