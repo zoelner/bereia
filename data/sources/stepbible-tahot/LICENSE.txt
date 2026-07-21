@@ -1,0 +1,7 @@
+Fonte: STEPBible-Data (github.com/STEPBible/STEPBible-Data)
+Diretório: Translators Amalgamated OT+NT (TAHOT Gen-Deu, Jos-Est, Job-Sng, Isa-Mal)
+Conteúdo: AT hebraico tageado — Strong + morfologia + glosas
+Licença: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+Atribuição: Tyndale House, Cambridge (STEPBible.org)
+Commit upstream: 0f60797c170f11a1f8dc75c5f7617973e2e66b0d
+Baixado em: 2026-07-21
