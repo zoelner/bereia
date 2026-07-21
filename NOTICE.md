@@ -6,7 +6,7 @@ Este projeto utiliza dados de terceiros. Cada fonte baixada mantém seu `LICENSE
 
 - **STEPBible Data** (TAHOT, TAGNT, TVTMS) — © Tyndale House, Cambridge — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — https://github.com/STEPBible/STEPBible-Data
 - **OpenBible.info Cross References** — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — https://www.openbible.info/labs/cross-references/
-- **Almeida Recebida** (português) — domínio público — via https://ebible.org
+- **Bíblia Livre (BLIVRE)** (português) — © 2018 Diego Santos, Mario Sérgio, e Marco Teles — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — via https://ebible.org (Almeida 1819, Textus Receptus)
 - **King James Version (KJV)** — domínio público — via https://ebible.org
 - **World English Bible (WEB)** — domínio público — via https://ebible.org
 - **Strong's Dictionaries** — domínio público — https://github.com/openscriptures/strongs
