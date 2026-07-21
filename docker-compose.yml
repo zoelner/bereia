@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg17
+    container_name: bereia-postgres
+    environment:
+      POSTGRES_USER: bereia
+      POSTGRES_PASSWORD: bereia
+      POSTGRES_DB: bereia
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bereia -d bereia"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  embedder:
+    build: ./embedder
+    container_name: bereia-embedder
+    environment:
+      MODEL_NAME: BAAI/bge-m3
+      # Revisão pinada dos pesos — determinismo do retrieval depende disso (ADR-005)
+      HF_REVISION: 5617a9f61b028005a4858fdac845db406aefb181
+    ports:
+      - "8000:8000"
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 600s # primeira subida baixa os pesos do modelo
+
+volumes:
+  pgdata:
+  hf_cache:
