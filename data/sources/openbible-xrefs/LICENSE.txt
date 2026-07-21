@@ -1,0 +1,6 @@
+Fonte: OpenBible.info (https://a.openbible.info/data/cross-references.zip)
+Conteúdo: ~340k referências cruzadas votadas (From/To/Votes, TSV)
+Licença: CC BY 4.0 — cabeçalho do arquivo: 'www.openbible.info CC-BY 2026-07-20'
+Atribuição: OpenBible.info
+Data do dado upstream: 2026-07-20
+Baixado em: 2026-07-21
