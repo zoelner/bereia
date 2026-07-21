@@ -1,0 +1,6 @@
+Fonte: STEPBible-Data (github.com/STEPBible/STEPBible-Data)
+Arquivo: Versification/TVTMS - Translators Versification Traditions ... - STEPBible.org CC BY.txt
+Licença: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+Atribuição: Tyndale House, Cambridge (STEPBible.org)
+Baixado em: 2026-07-21
+Nota: versão KJV-based (formato novo, pós mar/2025), alinhada à versificação-mestre do projeto

@@ -8,8 +8,10 @@ dist/
 .env.local
 
 # dados: fontes brutas e derivados ficam fora do Git (JSONL canônico é versionado)
+# diretórios são re-incluídos para o git conseguir enxergar os LICENSE.txt
 data/sources/**
 !data/sources/.gitkeep
+!data/sources/*/
 !data/sources/**/LICENSE.txt
 data/derived/**
 !data/derived/.gitkeep
