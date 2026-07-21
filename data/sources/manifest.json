@@ -1,0 +1,15 @@
+{
+  "$comment": "Proveniência verificável das fontes brutas (não redistribuídas — ver ADR-006). Auditoria: baixe da URL, confira o sha256.",
+  "sources": {
+    "stepbible-tvtms": {
+      "file": "stepbible-tvtms/TVTMS.txt",
+      "url": "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/master/Versification/TVTMS%20-%20Translators%20Versification%20Traditions%20with%20Methodology%20for%20Standardisation%20for%20Eng%2BHeb%2BLat%2BGrk%2BOthers%20-%20STEPBible.org%20CC%20BY.txt",
+      "upstreamRepo": "STEPBible/STEPBible-Data",
+      "upstreamCommit": "faf6a3531db4656b907ac2fccaa7cc71d9c47ab7",
+      "sha256": "8851a8b5a2575b2be9cc6a1bb57284c91c610154a7a259397fbfaffe37db796a",
+      "license": "CC BY 4.0",
+      "attribution": "Tyndale House, Cambridge (STEPBible.org)",
+      "downloadedAt": "2026-07-21"
+    }
+  }
+}

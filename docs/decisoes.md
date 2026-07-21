@@ -36,3 +36,7 @@ Versificação-mestre KJV, normalizada via STEPBible TVTMS **antes** de gravar J
 ## ADR-005 — Determinismo por build de embedder
 
 Vetores são reprodutíveis por **build** (modelo + revisão HF + deps pinadas), não entre builds distintos. `embedding_model` carimba a revisão em cada linha; `GET /health` expõe modelo+revisão e trava ingestão contra build divergente; teste de regressão (hash de vetores de um conjunto fixo) no CI. Re-embed exige bump explícito de revisão.
+
+## ADR-006 — Fontes brutas: proveniência versionada, não redistribuição
+
+Arquivos brutos de `data/sources/` ficam **fora do Git**: o STEPBible pede explicitamente para não redistribuir (atualizações fluem da fonte única) e o volume (dezenas de MB) incharia o repo. A auditabilidade vem de `data/sources/manifest.json`, versionado, com URL, commit do upstream, **sha256** e data de cada fonte — o pipeline de download da Fase 1 verifica os hashes, e um auditor reproduz o dado byte a byte a partir da origem oficial. Cadeia auditável: manifest (hash pinado) → parsers determinísticos → JSONL canônico (no Git) → Postgres (projeção).

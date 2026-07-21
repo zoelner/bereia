@@ -13,6 +13,7 @@ data/sources/**
 !data/sources/.gitkeep
 !data/sources/*/
 !data/sources/**/LICENSE.txt
+!data/sources/manifest.json
 data/derived/**
 !data/derived/.gitkeep
 
