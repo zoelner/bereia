@@ -12,13 +12,19 @@
       "downloadedAt": "2026-07-21"
     },
     "por-almeida": {
-      "file": "por-almeida/por-almeida.usfx.xml",
-      "url": "https://raw.githubusercontent.com/seven1m/open-bibles/master/por-almeida.usfx.xml",
+      "status": "QUARANTINED",
+      "reason": "Identificada por assinatura textual como 'Versão Revisada Segundo os Melhores Textos' (Juerp 1967), sob copyright apesar do rótulo 'Public Domain' no upstream. Não ingerir. Ver LICENSE.txt.",
       "upstreamRepo": "seven1m/open-bibles",
       "upstreamCommit": "5885a568bd74c5819f3121c3c02939e445a36c73",
       "sha256": "4990d0d1909e2bd57aa6ecc2a2ce9a565b154aac8575b0242dc943ad796e643e",
-      "license": "Public Domain",
-      "attribution": "João Ferreira de Almeida (via seven1m/open-bibles)",
+      "quarantinedAt": "2026-07-21"
+    },
+    "por-biblialivre": {
+      "file": "por-biblialivre/porbr2018_usfx.zip",
+      "url": "https://ebible.org/Scriptures/porbr2018_usfx.zip",
+      "sha256": "71ff5f1a2e464e8c0351a26172d6be5c7c3d4110aed318486d539c588ddcf859",
+      "license": "CC BY 4.0",
+      "attribution": "Bíblia Livre (BLIVRE) © 2018 Diego Santos, Mario Sérgio, e Marco Teles — Almeida 1819, Textus Receptus",
       "downloadedAt": "2026-07-21"
     },
     "eng-kjv": {

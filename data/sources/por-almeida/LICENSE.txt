@@ -1,7 +1,9 @@
-Fonte: seven1m/open-bibles (github.com/seven1m/open-bibles)
-Arquivo: por-almeida.usfx.xml
-Tradução: João Ferreira de Almeida (português)
-Licença: Domínio público (declarada no README do repositório upstream)
-Commit upstream: 5885a568bd74c5819f3121c3c02939e445a36c73
-Baixado em: 2026-07-21
-Nota: identificação exata da edição (Recebida/Atualizada PD) a confirmar no QA da Fase 1
+QUARENTENA — NÃO INGERIR (2026-07-21)
+
+O arquivo por-almeida.usfx.xml (seven1m/open-bibles, declarado 'Public Domain') foi identificado
+por assinatura textual como a 'Versão Revisada Segundo os Melhores Textos' (Imprensa Bíblica
+Brasileira/Juerp, 1967) — obra ainda sob copyright, difundida indevidamente como domínio público
+(removida do projeto SWORD pelo mesmo motivo).
+Evidência: base de texto crítico (1Jo 5:7 sem Comma), acréscimos TR entre colchetes (Mt 6:13, At 8:37),
+vocabulário da linhagem Atualizada (Gen 1:2 'pairava').
+O arquivo bruto foi removido. Substituída pela Bíblia Livre (data/sources/por-biblialivre/, CC BY 4.0).

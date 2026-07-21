@@ -4,7 +4,8 @@ Todas gratuitas (Fase 1). Cada fonte baixada ganha `LICENSE.txt` em `data/source
 
 | Fonte | Conteúdo | Formato | Licença | Origem |
 |-------|----------|---------|---------|--------|
-| Almeida (open-bibles) | Tradução PT João Ferreira de Almeida | USFX | Domínio público (declarada no upstream) | seven1m/open-bibles |
+| Bíblia Livre (BLIVRE) | Tradução PT — Almeida 1819, **Textus Receptus** (Comma 1Jo 5:7 e At 8:37 presentes ✓) | USFX | CC BY 4.0 (© Diego Santos, Mario Sérgio, Marco Teles) | ebible.org (`porbr2018`) |
+| ~~Almeida (open-bibles)~~ | **QUARENTENA**: rotulada "Public Domain" no upstream, mas a assinatura textual (1Jo 5:7 sem Comma, colchetes em Mt 6:13/At 8:37, "pairava" em Gn 1:2) a identifica como a "Versão Revisada Segundo os Melhores Textos" (Juerp 1967) — **sob copyright**, difundida indevidamente como PD | USFX | copyright | seven1m/open-bibles |
 | ~~Almeida Recebida~~ | **QUARENTENA**: almeidarecebida.org declara "domínio público" E CC BY-NC-SA simultaneamente, tradutor não identificado (apontado pela comunidade Bíblia Livre). O NC conflita com o dual licensing. Não ingerir até esclarecimento por escrito | — | ambígua | almeidarecebida.org |
 | KJV | Tradução EN (versificação-mestre) | USFX | Domínio público | ebible.org |
 | WEB | Tradução EN moderna | USFX | Domínio público | ebible.org |
