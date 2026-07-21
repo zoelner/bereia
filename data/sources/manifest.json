@@ -10,6 +10,32 @@
       "license": "CC BY 4.0",
       "attribution": "Tyndale House, Cambridge (STEPBible.org)",
       "downloadedAt": "2026-07-21"
+    },
+    "por-almeida": {
+      "file": "por-almeida/por-almeida.usfx.xml",
+      "url": "https://raw.githubusercontent.com/seven1m/open-bibles/master/por-almeida.usfx.xml",
+      "upstreamRepo": "seven1m/open-bibles",
+      "upstreamCommit": "5885a568bd74c5819f3121c3c02939e445a36c73",
+      "sha256": "4990d0d1909e2bd57aa6ecc2a2ce9a565b154aac8575b0242dc943ad796e643e",
+      "license": "Public Domain",
+      "attribution": "João Ferreira de Almeida (via seven1m/open-bibles)",
+      "downloadedAt": "2026-07-21"
+    },
+    "eng-kjv": {
+      "file": "eng-kjv/eng-kjv_usfx.zip",
+      "url": "https://ebible.org/Scriptures/eng-kjv_usfx.zip",
+      "sha256": "963a396715201ea60df7912f152b1ca67e9c77b7349a9030fbc4c2fe76e23dd1",
+      "license": "Public Domain",
+      "attribution": "King James Version (via ebible.org)",
+      "downloadedAt": "2026-07-21"
+    },
+    "eng-web": {
+      "file": "eng-web/engwebp_usfx.zip",
+      "url": "https://ebible.org/Scriptures/engwebp_usfx.zip",
+      "sha256": "f751bc6a4663829c4912c190586d919cfad4eb38af27218cee9a85658fcf18e0",
+      "license": "Public Domain",
+      "attribution": "World English Bible, Protestant edition (via ebible.org)",
+      "downloadedAt": "2026-07-21"
     }
   }
 }
