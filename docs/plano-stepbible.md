@@ -276,5 +276,3 @@ Comandos de aceite concretos:
 - **Q4 (variantes Ketiv/Qere e `wordType` minúsculo):** incluir Ketiv (`K` no TAHOT TextType) e leituras
   variantes minúsculas do TAGNT no conjunto principal de `original_words`, ou só o texto-base
   (L / maiúsculas)? Proposta default: carregar tudo carimbado, projeção decide — confirmar.
-</content>
-</invoke>
