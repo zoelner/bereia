@@ -2,12 +2,18 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
-import { canonicalVerseSchema, verseTextSchema, type CanonicalId, type UsfmBook } from "@bereia/core";
+import { beforeAll, describe, expect, it } from "vitest";
+import {
+  canonicalVerseSchema,
+  verseTextSchema,
+  type CanonicalId,
+  type CanonicalVerse,
+  type UsfmBook,
+} from "@bereia/core";
 import type { UsfxBible, UsfxChapter, UsfxVerse } from "../parsers/usfx/parser.js";
 import type { MappedRef, SourceRef, VersificationMapper } from "../parsers/tvtms/contract.js";
 import { usfxSourceInventory, usfxStandardInventory } from "../parsers/usfx/inventory.js";
-import { loadTvtms } from "../parsers/tvtms.js";
+import { AmbiguousMappingError, loadTvtms } from "../parsers/tvtms.js";
 import { parseUsfx } from "../parsers/usfx/parser.js";
 import {
   buildCanonicalVerses,
@@ -320,96 +326,179 @@ const VERSE_TEXTS = {
   WEB: { emitted: 31_211, dropped: ["PSA_119_0", "ROM_14_24", "ROM_14_25", "ROM_14_26"] },
 } as const;
 
-describe.skipIf(!hasAll)("integração real — canonical_verses + verse_texts (manifest pinado)", () => {
-  const kjvBible = (): UsfxBible => parseUsfx(readFileSync(FILES.kjv, "utf8"));
-  const load = (): {
-    inventory: ReadonlySet<CanonicalId>;
-    build: (file: string, translation: string) => VerseTextsResult;
-  } => {
-    const kjv = kjvBible();
-    const std = usfxStandardInventory(kjv);
-    const tvtms = readFileSync(FILES.tvtms, "utf8");
-    const inventory = canonicalIdSet(buildCanonicalVerses(kjv));
-    const build = (file: string, translation: string): VerseTextsResult => {
-      const bible = parseUsfx(readFileSync(file, "utf8"));
-      const mapper = loadTvtms(tvtms, usfxSourceInventory(bible), std);
-      return buildVerseTexts({ source: bible, translation, versificationTradition: TRADITION, mapper, inventory });
+/** As 5 refs de Ester onde os testes de conteúdo deixam 2 regras TVTMS ativas divergentes. */
+const ESTHER_AMBIGUOUS: readonly (readonly [number, number])[] = [
+  [1, 1],
+  [3, 13],
+  [4, 17],
+  [8, 12],
+  [10, 3],
+];
+
+interface BuiltTranslation {
+  name: string;
+  bible: UsfxBible;
+  mapper: VersificationMapper;
+  result: VerseTextsResult;
+}
+
+/**
+ * Parse pesado (3 USFX grandes + TVTMS) e builds feitos UMA vez em `beforeAll`,
+ * compartilhados por todos os testes — sem isso o run completo re-parseia por
+ * teste e estoura o testTimeout sob carga do pool (flakiness). `testTimeout`
+ * explícito porque os re-runs em máquina carregada não podem reprovar o gate.
+ */
+describe.skipIf(!hasAll)(
+  "integração real — canonical_verses + verse_texts (manifest pinado)",
+  () => {
+    let canonicalVerses: CanonicalVerse[];
+    let inventory: ReadonlySet<CanonicalId>;
+    const built: BuiltTranslation[] = [];
+
+    const pick = (name: string): BuiltTranslation => {
+      const b = built.find((x) => x.name === name);
+      if (b === undefined) throw new Error(`tradução não montada no beforeAll: ${name}`);
+      return b;
     };
-    return { inventory, build };
-  };
 
-  it("o manifest pinado casa o sha256 esperado (âncora ADR-008)", () => {
-    const hash = createHash("sha256").update(readFileSync(FILES.manifest)).digest("hex");
-    expect(hash).toBe(MANIFEST_SHA256);
-  });
-
-  it(`canonical_verses = ${CANONICAL_VERSES_TOTAL} (${BODY_VERSES} corpos + ${PSALM_TITLES} títulos v.0)`, () => {
-    const cv = buildCanonicalVerses(kjvBible());
-    expect(cv.length).toBe(CANONICAL_VERSES_TOTAL);
-    expect(cv.filter((v) => v.verse === 0).length).toBe(PSALM_TITLES);
-    expect(cv.filter((v) => v.verse > 0).length).toBe(BODY_VERSES);
-    // canon fechado: 66 livros, todos protestant.
-    expect(new Set(cv.map((v) => v.book)).size).toBe(66);
-    expect(cv.every((v) => v.canonStatus === "protestant" && v.theologicalCategory === null)).toBe(true);
-    // ordenado e sem id duplicado (determinismo + chave única).
-    expect([...cv].sort(compareCanonicalVerse)).toEqual(cv);
-    expect(new Set(cv.map((v) => v.id)).size).toBe(cv.length);
-  });
-
-  it("verse_texts por tradução: contagens exatas + descartes fora-do-mestre (OQ-4)", () => {
-    const { build } = load();
-    for (const translation of ["KJV", "WEB", "BLIVRE"] as const) {
-      const { verseTexts, stats } = build(
-        translation === "KJV" ? FILES.kjv : translation === "WEB" ? FILES.web : FILES.blivre,
-        translation,
-      );
-      expect(stats.emitted, translation).toBe(VERSE_TEXTS[translation].emitted);
-      expect(verseTexts.length, translation).toBe(VERSE_TEXTS[translation].emitted);
-      expect([...stats.dropped.map((d) => d.canonicalId)].sort(), `${translation} dropped`).toEqual(
-        [...VERSE_TEXTS[translation].dropped].sort(),
-      );
-      expect(stats.dropRate, translation).toBeLessThan(0.005);
-    }
-  });
-
-  it("FK e unicidade: todo verse_text ∈ inventário-mestre; (canonicalId, translation) único", () => {
-    const { inventory, build } = load();
-    for (const [translation, file] of [
-      ["KJV", FILES.kjv],
-      ["WEB", FILES.web],
-      ["BLIVRE", FILES.blivre],
-    ] as const) {
-      const { verseTexts } = build(file, translation);
-      for (const v of verseTexts) {
-        expect(inventory.has(v.canonicalId), `${translation} FK ${v.canonicalId}`).toBe(true);
+    beforeAll(() => {
+      const kjv = parseUsfx(readFileSync(FILES.kjv, "utf8"));
+      const std = usfxStandardInventory(kjv);
+      const tvtms = readFileSync(FILES.tvtms, "utf8");
+      canonicalVerses = buildCanonicalVerses(kjv);
+      inventory = canonicalIdSet(canonicalVerses);
+      const sources: readonly { name: string; file: string }[] = [
+        { name: "KJV", file: FILES.kjv },
+        { name: "WEB", file: FILES.web },
+        { name: "BLIVRE", file: FILES.blivre },
+      ];
+      for (const { name, file } of sources) {
+        const bible = name === "KJV" ? kjv : parseUsfx(readFileSync(file, "utf8"));
+        const mapper = loadTvtms(tvtms, usfxSourceInventory(bible), std);
+        const result = buildVerseTexts({
+          source: bible,
+          translation: name,
+          versificationTradition: TRADITION,
+          mapper,
+          inventory,
+        });
+        built.push({ name, bible, mapper, result });
       }
-      expect(new Set(verseTexts.map((v) => v.canonicalId)).size, translation).toBe(verseTexts.length);
-    }
-  });
+    }, 120_000);
 
-  it("âncoras: PSA_3_0 (título de Salmo) e At 8:37 (TR — KJV/BLIVRE sim, WEB não)", () => {
-    const { inventory, build } = load();
-    expect(inventory.has(cid("PSA_3_0"))).toBe(true);
-    expect(inventory.has(cid("ACT_8_37"))).toBe(true);
+    it("o manifest pinado casa o sha256 esperado (âncora ADR-008)", () => {
+      const hash = createHash("sha256").update(readFileSync(FILES.manifest)).digest("hex");
+      expect(hash).toBe(MANIFEST_SHA256);
+    });
 
-    const kjv = build(FILES.kjv, "KJV").verseTexts;
-    const web = build(FILES.web, "WEB").verseTexts;
-    const blivre = build(FILES.blivre, "BLIVRE").verseTexts;
+    it(`canonical_verses = ${CANONICAL_VERSES_TOTAL} (${BODY_VERSES} corpos + ${PSALM_TITLES} títulos v.0)`, () => {
+      const cv = canonicalVerses;
+      expect(cv.length).toBe(CANONICAL_VERSES_TOTAL);
+      expect(cv.filter((v) => v.verse === 0).length).toBe(PSALM_TITLES);
+      expect(cv.filter((v) => v.verse > 0).length).toBe(BODY_VERSES);
+      // canon fechado: 66 livros, todos protestant.
+      expect(new Set(cv.map((v) => v.book)).size).toBe(66);
+      expect(cv.every((v) => v.canonStatus === "protestant" && v.theologicalCategory === null)).toBe(true);
+      // ordenado e sem id duplicado (determinismo + chave única).
+      expect([...cv].sort(compareCanonicalVerse)).toEqual(cv);
+      expect(new Set(cv.map((v) => v.id)).size).toBe(cv.length);
+    });
 
-    // PSA_3_0: linha de título indexável em cada tradução que o tem (OQ-2).
-    for (const [name, vts] of [["KJV", kjv], ["WEB", web], ["BLIVRE", blivre]] as const) {
-      const title = vts.find((v) => v.canonicalId === "PSA_3_0");
-      expect(title, `${name} PSA_3_0`).toBeDefined();
-      expect(title?.text.length, name).toBeGreaterThan(0);
-    }
+    it("verse_texts por tradução: contagens exatas + descartes fora-do-mestre (OQ-4)", () => {
+      for (const translation of ["KJV", "WEB", "BLIVRE"] as const) {
+        const { verseTexts, stats } = pick(translation).result;
+        expect(stats.emitted, translation).toBe(VERSE_TEXTS[translation].emitted);
+        expect(verseTexts.length, translation).toBe(VERSE_TEXTS[translation].emitted);
+        expect([...stats.dropped.map((d) => d.canonicalId)].sort(), `${translation} dropped`).toEqual(
+          [...VERSE_TEXTS[translation].dropped].sort(),
+        );
+        expect(stats.dropRate, translation).toBeLessThan(0.005);
+      }
+    });
 
-    // At 8:37 (Textus Receptus): existe na KJV e BLIVRE, ausente na WEB (texto crítico).
-    const hasAct837 = (vts: typeof kjv): boolean => vts.some((v) => v.canonicalId === "ACT_8_37");
-    expect(hasAct837(kjv)).toBe(true);
-    expect(hasAct837(blivre)).toBe(true);
-    expect(hasAct837(web)).toBe(false);
-  });
-});
+    it("FK e unicidade: todo verse_text ∈ inventário-mestre; (canonicalId, translation) único", () => {
+      for (const translation of ["KJV", "WEB", "BLIVRE"] as const) {
+        const { verseTexts } = pick(translation).result;
+        for (const v of verseTexts) {
+          expect(inventory.has(v.canonicalId), `${translation} FK ${v.canonicalId}`).toBe(true);
+        }
+        expect(new Set(verseTexts.map((v) => v.canonicalId)).size, translation).toBe(verseTexts.length);
+      }
+    });
+
+    it("âncoras: PSA_3_0 (título de Salmo) e At 8:37 (TR — KJV/BLIVRE sim, WEB não)", () => {
+      expect(inventory.has(cid("PSA_3_0"))).toBe(true);
+      expect(inventory.has(cid("ACT_8_37"))).toBe(true);
+
+      // PSA_3_0: linha de título indexável em cada tradução que o tem (OQ-2).
+      for (const translation of ["KJV", "WEB", "BLIVRE"] as const) {
+        const title = pick(translation).result.verseTexts.find((v) => v.canonicalId === "PSA_3_0");
+        expect(title, `${translation} PSA_3_0`).toBeDefined();
+        expect(title?.text.length, translation).toBeGreaterThan(0);
+      }
+
+      // At 8:37 (Textus Receptus): existe na KJV e BLIVRE, ausente na WEB (texto crítico).
+      const hasAct837 = (name: string): boolean =>
+        pick(name).result.verseTexts.some((v) => v.canonicalId === "ACT_8_37");
+      expect(hasAct837("KJV")).toBe(true);
+      expect(hasAct837("BLIVRE")).toBe(true);
+      expect(hasAct837("WEB")).toBe(false);
+    });
+
+    it(
+      "tie-break 'Hebrew' vs 'Eng-KJV': SÓ as 5 refs de Ester divergem nas 3 Bíblias (âncora da decisão)",
+      () => {
+        for (const { name, bible, mapper } of built) {
+          // (a) As 5 refs de Ester: 'Eng-KJV' NÃO desempata (explode); 'Hebrew' devolve identidade.
+          for (const [chapter, verse] of ESTHER_AMBIGUOUS) {
+            expect(
+              () => mapper.toKjv({ book: "EST", chapter, verse, tradition: "Eng-KJV" }),
+              `${name} EST ${chapter}:${verse} sob Eng-KJV deve explodir`,
+            ).toThrow(AmbiguousMappingError);
+            expect(
+              mapper.toKjv({ book: "EST", chapter, verse, tradition: "Hebrew" }),
+              `${name} EST ${chapter}:${verse} sob Hebrew deve ser identidade`,
+            ).toEqual([{ book: "EST", chapter, verse, subverse: null }]);
+          }
+
+          // (b) Varredura exaustiva: as ÚNICAS refs onde 'Eng-KJV' diverge de 'Hebrew'
+          // (explode ou resultado diferente) são exatamente essas 5 de Ester — pinado
+          // para que uma mudança upstream do TVTMS vire asserção dirigida, não explosão.
+          const engThrew: string[] = [];
+          const diffs: string[] = [];
+          for (const [book, chapters] of bible.books) {
+            for (const [ch, chapter] of chapters) {
+              const seen = new Set<UsfxVerse>();
+              for (const verse of chapter.verses.values()) {
+                if (seen.has(verse)) continue;
+                seen.add(verse);
+                if (verse.text === "") continue;
+                const ref = { book, chapter: ch, verse: verse.verse } as const;
+                const hebrew = JSON.stringify(mapper.toKjv({ ...ref, tradition: "Hebrew" }));
+                let english: string;
+                try {
+                  english = JSON.stringify(mapper.toKjv({ ...ref, tradition: "Eng-KJV" }));
+                } catch (error) {
+                  if (error instanceof AmbiguousMappingError) {
+                    engThrew.push(`${book} ${ch}:${verse.verse}`);
+                    continue;
+                  }
+                  throw error;
+                }
+                if (english !== hebrew) diffs.push(`${book} ${ch}:${verse.verse}`);
+              }
+            }
+          }
+          const expectedEsther = ESTHER_AMBIGUOUS.map(([c, v]) => `EST ${c}:${v}`).sort();
+          expect(engThrew.sort(), `${name}: refs que explodem sob Eng-KJV`).toEqual(expectedEsther);
+          expect(diffs, `${name}: diffs Hebrew×Eng-KJV fora de Ester (deve ser vazio)`).toEqual([]);
+        }
+      },
+      60_000,
+    );
+  },
+  60_000,
+);
 
 if (!hasAll) {
   it("fontes USFX/TVTMS ausentes — integração PULADA (ver data/sources/manifest.json)", () => {
