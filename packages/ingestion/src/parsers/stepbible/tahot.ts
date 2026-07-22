@@ -63,6 +63,8 @@ interface TahotWord {
   lexeme: string;
   dStrong: string;
   morphology: string;
+  /** Linha REAL no arquivo (1-based, inclui cabeçalho/licença) — para mensagens de erro. */
+  lineNo: number;
 }
 
 /**
@@ -163,7 +165,7 @@ function walkTahot(tsv: string): { words: TahotWord[]; stats: TahotParseStats } 
       throw new TahotParseError(lineNo, (err as Error).message);
     }
 
-    words.push({ ref, canonicalId, lexeme, dStrong: cols[COL_DSTRONG] as string, morphology });
+    words.push({ ref, canonicalId, lexeme, dStrong: cols[COL_DSTRONG] as string, morphology, lineNo });
     stats.produced += 1;
   }
 
@@ -195,8 +197,10 @@ function walkTahot(tsv: string): { words: TahotWord[]; stats: TahotParseStats } 
 export function parseTahotDetailed(tsv: string): TahotParseResult {
   const { words, stats } = walkTahot(tsv);
   const nextPosition = new Map<string, number>();
-  const rows: TaggedWordRow[] = words.map((word, index) => {
-    const roots = extractStrongRoots(word.dStrong, index + 1);
+  const rows: TaggedWordRow[] = words.map((word) => {
+    // Linha REAL do arquivo (não o índice no array filtrado): a mensagem de erro do dStrong
+    // precisa apontar a linha de origem, não uma posição pós-skip inexistente.
+    const roots = extractStrongRoots(word.dStrong, word.lineNo);
     const position = (nextPosition.get(word.canonicalId) ?? 0) + 1;
     nextPosition.set(word.canonicalId, position);
     return taggedWordRowSchema.parse({
