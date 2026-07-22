@@ -71,6 +71,7 @@ export const originalWords = pgTable(
     strongId: text("strong_id"),
     strongRaw: text("strong_raw"), // dStrong bruto do STEPBible (Q2 do plano)
     morphology: text("morphology"),
+    edition: text("edition"), // carimbo TR/NA/variante por palavra (TAGNT); null p/ TAHOT (OQ-6)
   },
   (table) => [primaryKey({ columns: [table.canonicalId, table.position] })],
 );
