@@ -14,6 +14,7 @@ import {
   assembleOriginalWords,
   buildOriginalWords,
   isExtendedGreekStrongId,
+  normalizeStrongIdForFk,
   referencedStrongIds,
   taggedWordToOriginalWord,
   wordBook,
@@ -86,10 +87,36 @@ describe("taggedWordToOriginalWord — mapeamento campo-a-campo (mock)", () => {
     ).toThrow(/forma canônica/);
   });
 
-  it("aceita strongId grego estendido de 4 díg. (G6053) — a existência é FK de dado, não estrutural", () => {
-    const word = taggedWordToOriginalWord(mockRow({ canonicalId: "MAT_2_16", position: 29, strongId: "G6053" }));
-    expect(word.strongId).toBe("G6053");
+  it("anula strongId grego estendido (>G5624) preservando strongRaw — FK OQ-7 generalizada", () => {
+    const word = taggedWordToOriginalWord(
+      mockRow({ canonicalId: "MAT_2_16", position: 29, strongId: "G6053", strongRaw: "G6053" }),
+    );
+    expect(word.strongId).toBeNull();
+    expect(word.strongRaw).toBe("G6053");
     expect(isExtendedGreekStrongId("G6053")).toBe(true);
+  });
+
+  it("preserva strongId grego dentro do dicionário (G0976 <= G5624)", () => {
+    const word = taggedWordToOriginalWord(mockRow({ canonicalId: "MAT_1_1", position: 1, strongId: "G0976" }));
+    expect(word.strongId).toBe("G0976");
+  });
+
+  it("EXPLODE se anular um estendido mas o strongRaw for null (perderia o dStrong)", () => {
+    expect(() =>
+      taggedWordToOriginalWord(
+        mockRow({ canonicalId: "MAT_2_16", position: 29, strongId: "G6053", strongRaw: null }),
+      ),
+    ).toThrow(/strongRaw é null/);
+  });
+});
+
+describe("normalizeStrongIdForFk — política OQ-7 generalizada (mock)", () => {
+  it("anula grego > 5624; preserva grego <= 5624, hebraico e null", () => {
+    expect(normalizeStrongIdForFk("G6053")).toBeNull();
+    expect(normalizeStrongIdForFk("G7530")).toBeNull();
+    expect(normalizeStrongIdForFk("G5624")).toBe("G5624");
+    expect(normalizeStrongIdForFk("H8674")).toBe("H8674");
+    expect(normalizeStrongIdForFk(null)).toBeNull();
   });
 });
 
@@ -200,13 +227,17 @@ const TAGNT_PRODUCED = 142096;
 const TOTAL_PRODUCED = TAHOT_PRODUCED + TAGNT_PRODUCED; // 447.734
 
 /**
- * Léxicos STEPBible estendidos (grego > 5624) referenciados mas SEM entrada no
- * dicionário openscriptures — categoria OQ-7 manifestada em 4 díg. (G6xxx/G7xxx).
- * Baseline CONGELADO ao manifest: 71 lexemas distintos em 363 palavras. Qualquer
- * mudança = drift de fonte (falha ruidosa). Fora isso, a FK é limpa (0 órfão).
+ * Léxicos STEPBible gregos estendidos (> 5624) ANULADOS por FK (política OQ-7
+ * generalizada): strongId vira null, strongRaw preserva o dStrong. Baseline
+ * CONGELADO ao manifest: 71 lexemas distintos em 363 palavras. Qualquer mudança
+ * = drift de fonte (falha ruidosa). Após a anulação, TODO strongId não-nulo
+ * resolve no dicionário do N1 (FK real fechada, não só regex).
  */
 const EXTENDED_GREEK_LEXEMES = 71;
 const EXTENDED_GREEK_WORDS = 363;
+
+/** Teto do dicionário Strong do N1 por série (openscriptures): H0001..H8674, G0001..G5624. */
+const HEBREW_DICT_MAX = 8674;
 
 function sha256(file: string): string {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
@@ -289,21 +320,30 @@ describe.skipIf(!hasAll)("N6 integração — original_words a partir das fontes
     expect(bad).toHaveLength(0);
   });
 
-  it("FK contra strongs.jsonl (N1): 0 órfão fora do léxico estendido (71 lexemas / 363 palavras)", () => {
+  it("FK real contra strongs.jsonl (N1): TODO strongId não-nulo existe no dicionário", () => {
     const { words, dictIds } = real();
-    const referenced = referencedStrongIds(words);
-    const unresolved = [...referenced].filter((id) => !dictIds.has(id));
-    // Todo id não-resolvido DEVE ser um estendido grego conhecido (categoria OQ-7).
-    const orphan = unresolved.filter((id) => !isExtendedGreekStrongId(id));
-    expect(orphan).toEqual([]);
-    expect(unresolved).toHaveLength(EXTENDED_GREEK_LEXEMES);
-    const extendedWordCount = words.filter(
-      (w) => w.strongId !== null && isExtendedGreekStrongId(w.strongId) && !dictIds.has(w.strongId),
-    ).length;
-    expect(extendedWordCount).toBe(EXTENDED_GREEK_WORDS);
-    // O restante (não-estendido) resolve 100% no dicionário.
-    const resolved = [...referenced].filter((id) => !isExtendedGreekStrongId(id));
-    expect(resolved.every((id) => dictIds.has(id))).toBe(true);
+    const unresolved = [...referencedStrongIds(words)].filter((id) => !dictIds.has(id));
+    expect(unresolved).toEqual([]);
+  });
+
+  it("léxico grego estendido (>G5624) anulado com strongRaw preservado: 71 lexemas / 363 palavras", () => {
+    const { words } = real();
+    // Categoria null-por-extensão: strongId null MAS strongRaw é um grego estendido
+    // (desambigua de null-por-gramática [strongRaw H9xxx/null] e null-por-5díg [G\d{5,}]).
+    const extended = words.filter(
+      (w) => w.strongId === null && w.strongRaw !== null && isExtendedGreekStrongId(w.strongRaw),
+    );
+    expect(extended).toHaveLength(EXTENDED_GREEK_WORDS);
+    expect(new Set(extended.map((w) => w.strongRaw)).size).toBe(EXTENDED_GREEK_LEXEMES);
+  });
+
+  it("hebraico: todo strongId H não-nulo <= H8674 (teto do N1) — exceção reporta, não anula", () => {
+    const { words, dictIds } = real();
+    const hebrew = words.filter((w) => w.strongId !== null && (w.strongId as string).startsWith("H"));
+    const overCeiling = hebrew.filter((w) => Number((w.strongId as string).slice(1)) > HEBREW_DICT_MAX);
+    expect(overCeiling.map((w) => w.strongId)).toEqual([]);
+    // Reforço da FK restrito à série H: todos resolvem no dicionário.
+    expect(hebrew.every((w) => dictIds.has(w.strongId as string))).toBe(true);
   });
 
   it("0 deuterocanônico: todo livro pertence ao cânon de 66 (USFM_BOOKS)", () => {

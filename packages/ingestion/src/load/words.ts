@@ -16,9 +16,18 @@
  *   qualquer colisão é bug de determinismo/PK, não passa silenciosa.
  * - **Forma canônica do `strongId`** (`/^[HG]\d{4}$/`, zero-padded — OQ-6-b):
  *   é o contrato de FK com `strongs.id` (N1). Todo `strongId` não-nulo é
- *   verificado; forma fora do padrão explode. A EXISTÊNCIA de fato no
- *   dicionário é FK de dado (verificada na integração de `words.test.ts`
- *   contra o `strongs.jsonl` real), não estrutural.
+ *   verificado; forma fora do padrão explode.
+ * - **Normalização de FK (generalização da OQ-7):** o racional aprovado da
+ *   OQ-7 é "Strong SEM entrada no dicionário canônico → `strongId` null +
+ *   `strongRaw` preservado". Além dos estendidos de 5 díg. que o `parseTagnt`
+ *   já anula, o STEPBible referencia léxicos GREGOS estendidos de 4 díg. em
+ *   `G6xxx`/`G7xxx` (> `GREEK_OPENSCRIPTURES_MAX`) que passam pelo regex
+ *   canônico mas NÃO têm entrada no openscriptures (N1). Este build os anula
+ *   (`normalizeStrongIdForFk`), preservando o `strongRaw` — mesmo racional,
+ *   FRONTEIRA no build e NÃO no parser (o `TaggedWordRow` segue fiel à fonte;
+ *   a normalização de FK é responsabilidade de quem projeta em `original_words`).
+ *   Efeito: no conjunto final, TODO `strongId` não-nulo existe em
+ *   `strongs.jsonl` (verificado por FK real na integração de `words.test.ts`).
  * - **Ordem determinística** via os comparadores do N4 (`compareOriginalWord`):
  *   livro (ordem do cânon) → capítulo → verso → `position`. Mesma entrada, em
  *   qualquer ordem → mesma saída byte a byte (requisito de produto).
@@ -54,35 +63,72 @@ export const CANONICAL_STRONG_ID_RE = /^[HG]\d{4}$/;
 export const GREEK_OPENSCRIPTURES_MAX = 5624;
 
 /**
- * Verdadeiro para um `strongId` grego ALÉM do dicionário openscriptures
- * (número > `GREEK_OPENSCRIPTURES_MAX`) — categoria de léxico STEPBible
- * estendido sem entrada em `strongs.jsonl` (ver `GREEK_OPENSCRIPTURES_MAX`).
- * Assume forma canônica `/^[HG]\d{4}$/` (garantida por `taggedWordToOriginalWord`).
+ * Início da faixa de TAGS GRAMATICAIS (não-lexicais) do STEPBible: `9xxx`
+ * (`digits.startsWith("9")` em `stepbible/strongs.ts`). Um dStrong `G9xxx` é
+ * pontuação/gramática — o parser já o classifica como `grammar` (strongId
+ * null), NUNCA como radical lexical. A faixa de LÉXICO estendido vive ABAIXO
+ * dela (`5624 < n < 9000`), por isso o teto aqui: `G9016` (verseEnd) não é um
+ * léxico estendido, é gramática, e não pode ser confundido com `G6xxx`/`G7xxx`.
+ */
+export const GREEK_GRAMMAR_MIN = 9000;
+
+/**
+ * Verdadeiro para um `strongId` grego de LÉXICO ESTENDIDO — além do dicionário
+ * openscriptures (`> GREEK_OPENSCRIPTURES_MAX`) e ABAIXO da faixa gramatical
+ * (`< GREEK_GRAMMAR_MIN`), i.e. `G6xxx`/`G7xxx` (6000–7530 no dado real). É a
+ * categoria de léxico STEPBible sem entrada em `strongs.jsonl` (ver
+ * `GREEK_OPENSCRIPTURES_MAX`), distinta das tags `G9xxx` gramaticais. Assume
+ * forma canônica `/^[HG]\d{4}$/` (garantida por `taggedWordToOriginalWord`).
  */
 export function isExtendedGreekStrongId(strongId: string): boolean {
   const match = CANONICAL_STRONG_ID_RE.exec(strongId);
   if (match === null || strongId[0] !== "G") return false;
-  return Number(strongId.slice(1)) > GREEK_OPENSCRIPTURES_MAX;
+  const n = Number(strongId.slice(1));
+  return n > GREEK_OPENSCRIPTURES_MAX && n < GREEK_GRAMMAR_MIN;
+}
+
+/**
+ * Normaliza o `strongId` para o contrato de FK com `strongs.id` (N1),
+ * GENERALIZANDO a política OQ-7 ("Strong sem entrada no dicionário canônico →
+ * strongId null + strongRaw preservado"): um `strongId` grego estendido
+ * (> `GREEK_OPENSCRIPTURES_MAX`) não tem entrada no openscriptures, então vira
+ * `null` aqui (o `strongRaw` do registro preserva o dStrong completo). Qualquer
+ * outro id passa intacto — a existência dos demais é garantida pela FK real na
+ * integração. NÃO toca no parser: o `TaggedWordRow` continua fiel à fonte.
+ */
+export function normalizeStrongIdForFk(strongId: string | null): string | null {
+  if (strongId !== null && isExtendedGreekStrongId(strongId)) return null;
+  return strongId;
 }
 
 /**
  * Mapeia uma `TaggedWordRow` (parser STEPBible) para um `OriginalWord` do core,
- * revalidando pela fronteira Zod. Explode se o `strongId` não-nulo fugir da
- * forma canônica `/^[HG]\d{4}$/` (OQ-6-b) — o contrato de FK com `strongs.id`
- * é estrutural e não pode degradar em silêncio (ADR-008).
+ * revalidando pela fronteira Zod. Aplica `normalizeStrongIdForFk` (anula grego
+ * estendido, preservando `strongRaw`) e explode se o `strongId` NORMALIZADO
+ * não-nulo fugir da forma canônica `/^[HG]\d{4}$/` (OQ-6-b) — o contrato de FK
+ * com `strongs.id` não pode degradar em silêncio (ADR-008).
  */
 export function taggedWordToOriginalWord(row: TaggedWordRow): OriginalWord {
-  if (row.strongId !== null && !CANONICAL_STRONG_ID_RE.test(row.strongId)) {
+  const strongId = normalizeStrongIdForFk(row.strongId);
+  if (strongId !== null && !CANONICAL_STRONG_ID_RE.test(strongId)) {
     throw new Error(
-      `original_words ${row.canonicalId}#${String(row.position)}: strongId "${row.strongId}" ` +
+      `original_words ${row.canonicalId}#${String(row.position)}: strongId "${strongId}" ` +
         `fora da forma canônica /^[HG]\\d{4}$/ (quebra a FK com strongs.id)`,
+    );
+  }
+  // Anular um estendido sem `strongRaw` perderia o dStrong — não pode acontecer
+  // no dado real (TAGNT sempre carrega o dStrong em strongRaw); guarda defensiva.
+  if (strongId === null && row.strongId !== null && row.strongRaw === null) {
+    throw new Error(
+      `original_words ${row.canonicalId}#${String(row.position)}: strongId estendido ` +
+        `"${row.strongId}" anulado por FK mas strongRaw é null — o dStrong se perderia`,
     );
   }
   return originalWordSchema.parse({
     canonicalId: row.canonicalId,
     position: row.position,
     lexeme: row.lexeme,
-    strongId: row.strongId,
+    strongId,
     strongRaw: row.strongRaw,
     morphology: row.morphology,
     edition: row.edition,
