@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { strongsEntrySchema } from "@bereia/core";
 import { classifyStrong, normalizeStrong } from "./strongs.js";
 
 /**
@@ -41,7 +42,10 @@ describe("normalizeStrong", () => {
     expect(normalizeStrong("G9002", "greek")).toBeNull();
   });
 
-  it("toda saída não-nula casa com /^[HG]\\d{1,4}$/ (contrato strongsEntrySchema)", () => {
+  it("toda saída não-nula casa com o formato de id do strongsEntrySchema do core", () => {
+    // Valida contra o schema canônico (não um regex duplicado aqui) para pegar
+    // drift futuro do formato de id em @bereia/core automaticamente.
+    const idSchema = strongsEntrySchema.shape.id;
     const cases: [string, "hebrew" | "greek"][] = [
       ["H9003/{H7225G}", "hebrew"],
       ["H0430G", "hebrew"],
@@ -50,7 +54,8 @@ describe("normalizeStrong", () => {
     ];
     for (const [dStrong, lang] of cases) {
       const result = normalizeStrong(dStrong, lang);
-      expect(result).toMatch(/^[HG]\d{1,4}$/);
+      expect(result).not.toBeNull();
+      idSchema.parse(result);
     }
   });
 
