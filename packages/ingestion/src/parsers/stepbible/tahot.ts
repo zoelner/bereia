@@ -187,7 +187,10 @@ function walkTahot(tsv: string): { words: TahotWord[]; stats: TahotParseStats } 
  * que é PK de `original_words` (CLAUDE.md §5). A sequência por ordem de arquivo é
  * determinística (sha256 pinado), única e preserva a ordem de leitura (as palavras LXX
  * caem no lugar certo entre `#05` e `#06`; a cauda do verso hebraico precede a próxima).
- * A ligação com o `#pos` de origem fica preservada em `strongRaw`/`lexeme`, não na chave.
+ * O `#pos` cru NÃO é preservado em campo nenhum — perda consciente: `strongRaw` guarda a
+ * col 5 (dStrong) inteira, não a col 0 (ref/posição). A rastreabilidade de uma palavra
+ * reconstruída (caso (a)) vem de `edition` (TextType com base `"X"`, LXX) combinada com a
+ * ordem de leitura densa desta função, não de `strongRaw`.
  */
 export function parseTahotDetailed(tsv: string): TahotParseResult {
   const { words, stats } = walkTahot(tsv);

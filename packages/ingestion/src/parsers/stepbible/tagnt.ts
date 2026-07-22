@@ -43,8 +43,13 @@ const WORD_LINE_COL1 = /#\d+=/;
  * openscriptures de 4 dígitos (`/^[HG]\d{1,4}$/`) e NÃO tem entrada canônica — não é lixo,
  * é uma categoria reconhecida. `strong_id` fica null; o dStrong íntegro vai em `strong_raw`.
  * (3 ocorrências reais: Act.24.12 e 2Co.11.28 = G20447; 1Th.2.8 = G20833.)
+ *
+ * Restrito à letra grega (`G`): este arquivo só resolve dStrong em contexto "greek"
+ * (`resolveStrong` sempre chama `normalizeStrong(dStrong, "greek")`), então um código de
+ * 5+ dígitos com prefixo `H` seria idioma errado — deve explodir como qualquer dStrong
+ * fora do vocabulário, não ser absorvido silenciosamente aqui como "estendido".
  */
-const EXTENDED_STRONG = /^[HG]\d{5,}[A-Z]?$/;
+const EXTENDED_STRONG = /^G\d{5,}[A-Z]?$/;
 
 /**
  * Resolve o `strong_id` canônico (e o dStrong bruto) de um campo dStrong=Grammar (col 4).
