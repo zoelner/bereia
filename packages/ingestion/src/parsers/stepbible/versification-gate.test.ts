@@ -32,25 +32,31 @@ import { usfxStandardInventory } from "../usfx/inventory.js";
  *   É exatamente o inventário `{ title: false, last: N+1 }` que o golden usa para a
  *   tradição hebraica dos Salmos.
  *
- * O gate exige CONCORDÂNCIA 100% entre `toKjv(hebRef,"Hebrew")` e o conjunto de
- * canonical_ids que a ref embutida atribuiu às palavras daquele verso hebraico.
- * Comparação é CONJUNTO → CONJUNTO (o mapper devolve 0..n refs em splits/merges; verso
- * 0 = título) — nunca colapsada à força para 1:1. Divergência genuína NÃO é "consertada"
- * ajustando o esperado: é reportada (o dono precisa vê-la). Sem os arquivos (CI), a suíte
- * é PULADA — nunca verde falso (ADR-006/ADR-008).
+ * VEREDICTO — CONCORDÂNCIA MÓDULO GRANULARIDADE (o gate NÃO exige 100%).
+ * A comparação é CONJUNTO → CONJUNTO (o mapper devolve 0..n refs em splits/merges; verso 0
+ * = título) — nunca colapsada à força para 1:1. Onde os dois lados divergem, o desvio é
+ * ACEITO desde que caia EXATAMENTE no conjunto conhecido, congelado em `KNOWN_DIVERGENCES`.
+ * Sem os arquivos (CI), a suíte é PULADA — nunca verde falso (ADR-006/ADR-008).
  *
- * RESULTADO (2026-07-22, gate NÃO-100% — FINDING para o dono):
- *   23.213 versos hebraicos varridos; 23.155 concordam EXATO; 58 divergem — TODOS por
- *   VAZAMENTO DE GRANULARIDADE (verso × palavra), NÃO por erro do produtor. A premissa do
- *   plano ("todo título de Salmo se comporta como o Sl 3, deslocando +1") é FALSA no dado:
- *   só ~53 Salmos deslocam; os outros 53 são "título-mesclado" (heb v.1 = KJV {v.0 título,
- *   v.1 corpo}). A ref embutida (produtora do canonical_id por Q1) carimba por palavra e
- *   roteia o título ao v.0 e o corpo ao v.1 — CORRETO. O mapper TVTMS opera por verso
- *   ("Keep verse"/EngTitleMerged) e não emite o v.0 — INCOMPLETO, não errado. Mesmo padrão
- *   em 5 versos de fronteira (1Ki 18:34/20:3/22:21 StartDifferent; Ne 7:67-68 verso só-KJV
- *   "cavalos" absorvido no hebraico). Resolver = decisão do dono (aceitar a categoria, já
- *   fechada e pinada abaixo, ou enriquecer o mapper com a seção Condensed do TVTMS): FORA
- *   do escopo deste nó (não edito o mapper). Ver `docs/plano-stepbible.md` Q1 e o retorno N5.
+ * DECISÃO DO DONO (2026-07-22 — Opção A APROVADA): aceitar a categoria. A ref embutida é
+ * CANÔNICA (produtora do canonical_id, Q1); onde o mapper TVTMS (verso a verso) não reproduz
+ * o split que a ref embutida faz por PALAVRA, a ref embutida vence e o desvio é aceito.
+ * 23.213 versos hebraicos varridos; 23.155 concordam EXATO; 58 são vazamento verso×palavra:
+ *   - 53 TÍTULO-MESCLADO (TM): heb v.1 = KJV {v.0 título, v.1 corpo}. A premissa do plano
+ *     ("todo título desloca +1 como o Sl 3") é FALSA — 53 Salmos MESCLAM o título no v.1.
+ *     Regra TVTMS `EngTitleMerged+Hebrew | Keep verse` (Sl 133: identidade). O Expanded não
+ *     roteia verso-fonte hebraico ao título KJV v.0 (isso vive só na seção Condensed).
+ *   - 3 StartDifferent (SD): 1Ki 18:34, 20:3, 22:21 — a fronteira do verso cai num "word
+ *     diferente"; o TVTMS só marca nota + `Keep verse`. NÃO-verificáveis por regra: o TVTMS
+ *     não carrega quantas palavras cruzam a fronteira (exigiria alinhamento textual). A ref
+ *     embutida é a única verdade ali.
+ *   - 2 NEEMIAS (KJV-only): Ne 7:67-68 — o verso só-KJV 7:68 ("cavalos", ausente no
+ *     Leningrad) é absorvido em heb 7:67; a numeração desloca −1. Mapper (`Renumber`+`IfEmpty`)
+ *     e ref embutida prendem o verso ambíguo a versos hebraicos diferentes.
+ * BACKLOG: enriquecer os TÍTULOS via seção Condensed (fazer o mapper emitir o split
+ * v.1→{v0,v1}) zeraria os 53 TM; os 3 SD permaneceriam irredutíveis. Fora do escopo de N5.
+ * O baseline abaixo é EXATO: qualquer 59ª divergência, mudança de categoria, ou um dos 58
+ * divergindo DIFERENTE = falha ruidosa. Ver `docs/plano-stepbible.md` Q1 e o retorno N5.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../..");
@@ -75,13 +81,58 @@ const TOTAL_HEBREW_VERSES = 23213;
 
 /**
  * Nº EXATO de versos hebraicos que divergem por vazamento de granularidade de fronteira
- * — atrelado ao manifest. Retrato do FINDING do gate; mudança aqui = mudança de
- * fonte/mapper (reabrir Q1). Composição observada (2026-07-22):
- *   53 Salmos título-mesclado (heb v.1 = KJV {v.0 título, v.1 corpo})
- *    5 fronteira/merge: 1Ki 18:34, 1Ki 20:3, 1Ki 22:21 (StartDifferent);
- *      Ne 7:67, 7:68 (verso só-KJV "cavalos" absorvido no hebraico — MergedFollVerse).
+ * — atrelado ao manifest. Retrato do gate; mudança aqui = mudança de fonte/mapper
+ * (reabrir Q1). Composição: 53 título-mesclado + 3 StartDifferent + 2 Neemias (= 58).
  */
 const GRANULARITY_DIVERGENCES = 58;
+
+/** Categoria da divergência aceita (documental; ver cabeçalho). */
+type DivergenceCategory = "TM" | "SD" | "KJV-only";
+
+interface KnownDivergence {
+  /** Ref hebraica "Código C:V" (bookCode STEPBible: "Psa", "1Ki", "Neh"). */
+  ref: string;
+  category: DivergenceCategory;
+  /** Conjunto produzido pela ref embutida (produtora), ordenado por string. */
+  embedded: string[];
+  /** Conjunto do mapper TVTMS, ordenado por string. */
+  mapper: string[];
+}
+
+/**
+ * Salmos TÍTULO-MESCLADO (53): heb v.1 = KJV {v.0 título, v.1 corpo}. Regra TVTMS
+ * `EngTitleMerged+Hebrew | Keep verse` (Sl 133 por identidade — nenhuma regra ativa).
+ * Padrão fechado: embutida {PSA_n_0, PSA_n_1}, mapper {PSA_n_1}.
+ */
+const TITLE_MERGED_PSALMS = [
+  11, 14, 15, 16, 17, 23, 24, 25, 26, 27, 28, 29, 32, 35, 37, 50, 66, 72, 73, 74, 78, 79, 82,
+  86, 87, 90, 98, 100, 101, 103, 109, 110, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129,
+  130, 131, 132, 133, 134, 138, 139, 141, 143, 144, 145,
+] as const;
+
+/**
+ * BASELINE CONGELADO das 58 divergências ACEITAS (dono, 2026-07-22, Opção A). O gate exige
+ * que o sweep vivo produza EXATAMENTE este conjunto — ref, categoria e os dois conjuntos.
+ * Qualquer 59ª, ausência, ou set diferente = falha ruidosa. As 5 não-Salmo estão explícitas
+ * com a regra TVTMS aplicada anotada (ver cabeçalho e o retorno N5).
+ */
+const KNOWN_DIVERGENCES: readonly KnownDivergence[] = [
+  ...TITLE_MERGED_PSALMS.map(
+    (n): KnownDivergence => ({
+      ref: `Psa ${n}:1`,
+      category: "TM",
+      embedded: [`PSA_${n}_0`, `PSA_${n}_1`],
+      mapper: [`PSA_${n}_1`],
+    }),
+  ),
+  // StartDifferent: fronteira num "word diferente" (TVTMS `AllBibles | Keep verse` + nota).
+  { ref: "1Ki 18:34", category: "SD", embedded: ["1KI_18_33", "1KI_18_34"], mapper: ["1KI_18_34"] },
+  { ref: "1Ki 20:3", category: "SD", embedded: ["1KI_20_2", "1KI_20_3"], mapper: ["1KI_20_3"] },
+  { ref: "1Ki 22:21", category: "SD", embedded: ["1KI_22_21", "1KI_22_22"], mapper: ["1KI_22_21"] },
+  // Neemias (KJV-only): verso só-KJV 7:68 ("cavalos") absorvido no hebraico; numeração −1.
+  { ref: "Neh 7:67", category: "KJV-only", embedded: ["NEH_7_67", "NEH_7_68"], mapper: ["NEH_7_67"] },
+  { ref: "Neh 7:68", category: "KJV-only", embedded: ["NEH_7_69"], mapper: ["NEH_7_68", "NEH_7_69"] },
+];
 
 /** Uma linha TAHOT é "por palavra" quando a col 0 traz o marcador `#<pos>=`. */
 const WORD_LINE_RE = /#\d+=/;
@@ -278,32 +329,43 @@ describe.skipIf(!hasAll)("gate de versificação TVTMS × ref embutida (TAHOT re
     expect(divergences.length).toBe(GRANULARITY_DIVERGENCES);
   });
 
-  it("GATE ADR-002/Q1 — concordância 100% mapper × ref embutida (FALHA: granularidade)", () => {
-    // FINDING (o dono precisa ver): a verificação independente NÃO fecha 100%. O mapper
-    // TVTMS (verso a verso) diverge da ref embutida (palavra a palavra, produtora do
-    // canonical_id por Q1) em ${GRANULARITY_DIVERGENCES} versos hebraicos, TODOS por
-    // vazamento de granularidade de fronteira. A ref embutida está CORRETA (roteia cada
-    // palavra ao seu verso KJV real); o mapper não consegue reproduzir o split verso→2KJV
-    // nesses casos (Keep verse / IfEmpty). Categorias:
-    //   (a) Salmo título-mesclado: heb v.1 = KJV {v.0 título, v.1 corpo} — ex.: Sl 72:1.
-    //   (b) StartDifferent: fronteira num "word diferente" — 1Ki 18:34, 20:3, 22:21.
-    //   (c) MergedFollVerse/IfEmpty: verso só-KJV (ex.: Ne 7:68, "cavalos") absorvido no
-    //       hebraico — desloca a numeração; mapper e embutida discordam por 1 verso.
-    // Resolver está FORA do escopo deste nó (não posso editar o mapper): é decisão do dono
-    // — aceitar a categoria (verificação "modulo granularidade") ou enriquecer o mapper com
-    // a seção Condensed do TVTMS (título/fronteiras a nível de palavra). Ver notes N5.
-    const byCat = new Map<string, Divergence[]>();
-    for (const d of divergences) {
-      const cat = d.isTitle ? "titulo-mesclado" : "fronteira/merge";
-      byCat.set(cat, [...(byCat.get(cat) ?? []), d]);
+  it("GATE ADR-002/Q1 — concordância MÓDULO GRANULARIDADE: exatamente as 58 conhecidas", () => {
+    // Dono aprovou (2026-07-22, Opção A) aceitar a categoria: o gate passa quando o desvio
+    // mapper × ref embutida é EXATAMENTE o baseline congelado `KNOWN_DIVERGENCES` — ref,
+    // categoria e os DOIS conjuntos. 59ª divergência, ausência, mudança de categoria ou um
+    // dos 58 divergindo diferente ⇒ falha ruidosa. Ver cabeçalho para a análise por categoria.
+    const refOf = (d: Divergence): string => `${d.book} ${d.chapter}:${d.verse}`;
+    const live = new Map(divergences.map((d) => [refOf(d), d]));
+    const baseline = new Map(KNOWN_DIVERGENCES.map((e) => [e.ref, e]));
+
+    // (1) Mesmo conjunto de refs — nada a mais (59ª) nem a menos (uma que sumiu).
+    expect([...live.keys()].sort(), "refs divergentes vivas vs baseline").toEqual(
+      [...baseline.keys()].sort(),
+    );
+
+    // (2) Para cada ref conhecida: os dois conjuntos batem EXATAMENTE (divergir diferente falha).
+    for (const [ref, exp] of baseline) {
+      const got = live.get(ref);
+      expect(got, `divergência conhecida sumiu do sweep: ${ref}`).toBeDefined();
+      if (!got) continue;
+      expect(got.embedded, `${ref}: conjunto da ref embutida mudou`).toEqual(exp.embedded);
+      expect(got.mapper, `${ref}: conjunto do mapper TVTMS mudou`).toEqual(exp.mapper);
     }
-    const summary = [...byCat.entries()]
-      .map(([cat, ds]) => `  [${cat}] ${ds.length}: ${ds.map((d) => `${d.book} ${d.chapter}:${d.verse}`).join(", ")}`)
-      .join("\n");
-    expect(
-      divergences.length,
-      `GATE NÃO-100% — ${divergences.length} divergência(s) mapper × ref embutida (granularidade):\n${summary}`,
-    ).toBe(0);
+
+    // (3) Categoria TM ⇔ isTitle no dado vivo (drift de categoria TM/não-TM falha ruidoso).
+    for (const e of KNOWN_DIVERGENCES) {
+      const got = live.get(e.ref);
+      if (!got) continue;
+      expect(got.isTitle, `${e.ref}: isTitle vs categoria ${e.category}`).toBe(e.category === "TM");
+    }
+
+    // (4) Composição documentada congelada: 53 TM + 3 SD + 2 KJV-only = 58.
+    const count = (c: DivergenceCategory): number =>
+      KNOWN_DIVERGENCES.filter((e) => e.category === c).length;
+    expect(count("TM")).toBe(53);
+    expect(count("SD")).toBe(3);
+    expect(count("KJV-only")).toBe(2);
+    expect(KNOWN_DIVERGENCES.length).toBe(GRANULARITY_DIVERGENCES);
   });
 
   it("âncora — título do Sl 3 (heb 3:1, isTitle) → KJV PSA_3_0 (verso 0)", () => {
