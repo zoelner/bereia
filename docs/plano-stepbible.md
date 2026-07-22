@@ -259,7 +259,28 @@ Comandos de aceite concretos:
 - Alinhamento palavra-a-palavra PT↔original (fora do MVP, CLAUDE.md §2).
 - Modelar subverso no `canonical_id` (decisão já fechada; partes concatenam — spike-tvtms §2).
 
-## 7. Questões em aberto
+## 7. Questões em aberto — DESFECHO (2026-07-22, decididas pelo dono)
+
+- **Q1 → APROVADA**: ref KJV embutida é a produtora do `canonical_id`; mapper TVTMS como gate
+  independente (desfecho do N5 acima: concordância módulo granularidade, baseline de 58).
+- **Q2 → APROVADA**: dStrong bruto preservado na coluna `strong_raw` (nullable) de `original_words`.
+- **Q3 → RESOLVIDA (hipótese refutada)**: `Act.8.37` aparece como **ref primária** no TAGNT com 23
+  palavras, todas TR puro (`=K`) — sem lacuna; caso-ouro travado no teste de integração.
+- **Q4 → APROVADA**: tudo carregado com carimbo (TextType base+marker; WordType com eixos
+  variant/bracketed); a projeção decide exposição.
+
+### Backlog técnico remanescente (pós-merge)
+
+- Enriquecer o mapper TVTMS com o padrão de títulos da seção Condensed (zeraria 53 das 58 do
+  baseline; os 3 StartDifferent são irredutíveis) — ver desfecho do N5.
+- Strongs estendidos de 5 dígitos (G20447, G20833; 3 palavras reais): hoje `strong_id` null +
+  `strong_raw` preservado; avaliar dicionário estendido próprio quando o `verse_exegesis` real chegar.
+- `NotImplementedError` (packages/ingestion/src/errors.ts) ficou sem consumidor interno após a
+  fachada N6 — remover num nó de limpeza se nenhum parser novo o usar.
+- Próximos nós da Fase 1 (§6): load de `strongs` (openscriptures) e o **nó de load** dos JSONL
+  canônicos de `original_words`/`canonical_verses` (todos os gates que o protegem estão verdes).
+
+Registro original das questões (como propostas antes da aprovação):
 
 - **Q1 (ADR-002, para o dono):** aprova o produtor do `canonical_id` ser a **ref KJV embutida** do STEPBible
   (com o mapper TVTMS como gate de verificação em N5), em vez de rodar o mapper como produtor? E aprova a

@@ -63,6 +63,7 @@ Implementado em `packages/ingestion/src/parsers/tvtms/`:
 7. ✅ **Parser USFX + inventários reais** (`parsers/usfx/`, 2026-07-22): os casos-ouro agora TAMBÉM rodam contra a estrutura real da KJV, WEB e Bíblia Livre (`real-sources.test.ts`) — KJV→mestre e BLIVRE→mestre são identidade verificada; WEB tem At 8:37 vazio (texto crítico) e o mapper responde corretamente. Verificações de corpus: KJV e BLIVRE com exatamente 31.102 versos canônicos; títulos de Salmos capturados (`<d>`, inclusive o padrão acróstico da WEB no Sl 119 com `<ve/>` dentro do `<d>`); zero versos em ponte no cânon de 66 (pontes só nos apócrifos, pulados — asserção acusa se fonte futura trouxer).
 
 Pendências conhecidas para a ingestão (fora do gate):
-- Como `verse 0` (título de Salmo) entra no `canonical_id` é decisão da ingestão (documentado em `contract.ts`).
+- ~~Como `verse 0` entra no `canonical_id`~~ **resolvido** (parser STEPBible, 2026-07-22): verso 0 = título de Salmo é produzido (`PSA_3_0`), aceito pelos schemas (`nonnegative`).
 - A divergência 3Jo 14→15 não ocorre em nenhuma das 3 fontes reais (WEB segue numeração KJV ali) — coberta pelo caso-ouro simulado.
-- TAHOT/TAGNT (hebraico/grego) usam parser TSV próprio (`stepbible.ts`) — próximo passo; Salmos e Malaquias do TAHOT exercitarão os Renumber de verdade.
+- ~~TAHOT/TAGNT usam parser TSV próprio~~ **entregue** (`parsers/stepbible/`, PR #1): os Renumber hebraicos foram exercitados com dado real — sweep de 23.213 versos, concordância módulo granularidade com baseline de 58 (ver `docs/plano-stepbible.md` §N5).
+- Backlog do mapper: consumir o padrão de títulos da seção Condensed para emitir o split título/corpo dos 53 Salmos de título-mesclado (ver plano STEPBible, backlog técnico).
