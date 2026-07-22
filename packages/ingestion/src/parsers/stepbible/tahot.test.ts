@@ -172,6 +172,16 @@ describe("parseTahot — skips com estatística e explosão de formato", () => {
   it("EXPLODE com número da linha em dStrong fora do vocabulário fechado", () => {
     expect(() => parseTahot(wordLine("Gen.1.1#01=L", "וְ", "X0001"))).toThrow(/linha 1:.*dStrong/);
   });
+
+  it("dStrong ruim após cabeçalho aponta a linha REAL do arquivo (2), não a posição pós-skip (1)", () => {
+    // A linha-palavra é a 2ª do arquivo; como o cabeçalho é pulado, ela seria a 1ª no array
+    // filtrado. O erro do dStrong deve citar a linha 2 (origem real), não a 1 (índice filtrado).
+    const tsv = [
+      "TAHOT Gen-Deu - STEPBible.org CC BY 4.0", // linha 1: cabeçalho, pulada
+      wordLine("Gen.1.1#01=L", "וְ", "X0001"), // linha 2: dStrong fora do vocabulário
+    ].join("\n");
+    expect(() => parseTahot(tsv)).toThrow(/TAHOT linha 2:.*dStrong/);
+  });
 });
 
 describe("aggregateHebrewVerses — insumo do gate hebraico (N5)", () => {
