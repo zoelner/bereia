@@ -18,4 +18,4 @@ Todas gratuitas (Fase 1). Cada fonte baixada ganha `LICENSE.txt` em `data/source
 
 ## Restrições de copyright
 
-**NÃO ingerir:** ACF, ARC, ARA, NVI — todas sob copyright. A ACF permite citação de até 1.100 versículos, insuficiente para indexação. Qualquer tradução nova precisa de verificação de licença ANTES do download.
+**NÃO ingerir:** ACF, ARC, ARA, NVI, Bíblia de Jerusalém (© Paulus/Éditions du Cerf; cópias digitais circulantes são não autorizadas) — todas sob copyright. A ACF permite citação de até 1.100 versículos, insuficiente para indexação. Qualquer tradução nova precisa de verificação de licença ANTES do download.
