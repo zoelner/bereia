@@ -108,6 +108,13 @@ describe("parseTagnt — estrutura (linhas sintéticas)", () => {
     const tsv = [wordLine("Mat.1.1#01=NA", "Βίβλος (Biblos)", "G0976=N-NSF")].join("\n");
     expect(() => parseTagnt(tsv)).toThrow(/TAGNT linha 1:/);
   });
+
+  it("EXPLODE num dStrong H de 5+ dígitos em contexto grego (idioma errado, não é 'estendido')", () => {
+    // EXTENDED_STRONG ficou restrito a G\d{5,}: um H\d{5,} não é mais absorvido em silêncio
+    // como Strong estendido — cai em normalizeStrong(_, "greek") e explode por idioma errado.
+    const tsv = [wordLine("Mat.1.1#01=NKO", "Βίβλος (Biblos)", "H99999=N-NSF")].join("\n");
+    expect(() => parseTagnt(tsv)).toThrow(/TAGNT linha 1/);
+  });
 });
 
 describe("projeções de edição TR/NA (K/N ∈ WordType)", () => {
