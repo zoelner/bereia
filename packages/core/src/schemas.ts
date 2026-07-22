@@ -21,7 +21,8 @@ export const canonicalVerseSchema = z.object({
   id: canonicalIdSchema,
   book: usfmBookSchema,
   chapter: z.number().int().positive(),
-  verse: z.number().int().positive(),
+  /** 0 = título de Salmo (ex.: PSA_3_0); o pipeline produz canonical_ids com verse=0. */
+  verse: z.number().int().nonnegative(),
   canonStatus: canonStatusSchema,
   theologicalCategory: z.string().nullable(),
 });
@@ -45,6 +46,8 @@ export const originalWordSchema = z.object({
   position: z.number().int().nonnegative(),
   lexeme: z.string().min(1),
   strongId: z.string().nullable(),
+  /** dStrong bruto do STEPBible (letra de desambiguação + tags H9xxx que se perdem no strongId). */
+  strongRaw: z.string().nullable(),
   morphology: z.string().nullable(),
 });
 export type OriginalWord = z.infer<typeof originalWordSchema>;
