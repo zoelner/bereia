@@ -49,9 +49,17 @@ Tradições (`SourceType`): Latin, Greek, Hebrew, **Eng-KJV (1.834 linhas — at
 
 KJV e WEB seguem a tradição inglesa (mapeamento majoritariamente identidade, exceto os casos NT listados no cabeçalho). A **Almeida Recebida precisa de verificação empírica**: base TR sugere tradição inglesa, mas os `Tests` decidem por trecho — é exatamente para isso que o mecanismo existe. Já **TAHOT (hebraico) usa versificação hebraica** — Salmos e Malaquias VÃO divergir; o mapeamento é obrigatório para alinhar `original_words` ao `canonical_id`.
 
-## Próximos passos (ordem)
+## Status da implementação (2026-07-22)
 
-1. Tabela de códigos TVTMS/OSIS → USFM (fixture versionada + teste).
-2. Parser da seção Expanded → estrutura tipada (Zod) com `Action` como enum fechado.
-3. Avaliador de `Tests` (Exist/NotExist/Last/contagem de palavras/TextBeforeV1) sobre o output do parser USFX.
-4. Suíte de casos-ouro executável (tabela acima) — **gate: 100% antes do 1º JSONL canônico**.
+Implementado em `packages/ingestion/src/parsers/tvtms/`:
+
+1. ✅ Tabela de códigos TVTMS → USFM (`books.ts`, fixture explícita + teste de bijeção). Os códigos do TVTMS são USFM em title-case; deuterocanônicos reconhecidos e pulados com estatística.
+2. ✅ Parser da Expanded (`expanded.ts`): `Action` como enum Zod fechado (12 valores + variante `*`); 22.874 linhas de dado = 15.933 regras canônicas + 6.941 deuterocanônicas puladas (números exatos assertados no smoke, atrelados ao sha256 do manifest).
+3. ✅ Gramática de refs (`refs.ts`): listas (`;`/`,`), ranges (inclusive entre capítulos), `Title`, capítulos-letra e as 4 notações de subverso (`!a`, `.2`, `37a`, `35*a` — extras LXX).
+4. ✅ Avaliador de `Tests` (`tests-grammar.ts`): Exist/NotExist/Last, TextBeforeV1, comparações de palavras com fator e soma, sobre a interface `SourceInventory` (a implementação real vem do parser USFX).
+5. ✅ Mapper (`mapper.ts`): regras ativas por avaliação de Tests, identidade como default, união de partes por tradição, desempate por `ref.tradition` e `AmbiguousMappingError` quando o mapeamento não é determinístico.
+6. ✅ **Gate: suíte de casos-ouro 100% verde contra o arquivo real** (`golden.test.ts`): títulos de Salmos (hebraico e inglês-separado), Ml 3:19-24→4:1-6 (contagem de palavras decide a tradição), Jl 3-4→2:28-3:21, At 8:37, 3Jo 14-15, Rm 16:25-27. Sem o arquivo (CI), a suíte é pulada, nunca falsamente verde.
+
+Pendências conhecidas para a ingestão (fora do gate):
+- `SourceInventory`/`StandardInventory` reais virão do parser USFX (Fase 1, próximo passo).
+- Como `verse 0` (título de Salmo) entra no `canonical_id` é decisão da ingestão (documentado em `contract.ts`).

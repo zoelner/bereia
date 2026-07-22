@@ -1,40 +1,32 @@
-import { z } from "zod";
-import { usfmBookSchema } from "@bereia/core";
-import { NotImplementedError } from "../errors.js";
+import { parseTvtmsExpanded } from "./tvtms/expanded.js";
+import { TvtmsMapper, type StandardInventory } from "./tvtms/mapper.js";
+import type { SourceInventory } from "./tvtms/tests-grammar.js";
+import type { VersificationMapper } from "./tvtms/contract.js";
 
 /**
  * Normalização de versificação via STEPBible TVTMS (ADR-002).
  *
- * COMPONENTE CRÍTICO: erro aqui contamina canonical_id sistematicamente.
  * Gate da Fase 1: a suíte de casos-ouro (títulos de Salmos, Ml 3/4, Jl 2/3,
  * 3Jo, Rm 16:25-27, versos ausentes em textos críticos) precisa passar 100%
  * antes do primeiro data/canonical/*.jsonl.
+ *
+ * O mapeador NÃO é uma tabela estática: os Tests do TVTMS são condições sobre
+ * o conteúdo da Bíblia-fonte, por isso `loadTvtms` exige a fonte já parseada
+ * (SourceInventory) e a contagem de versos da versificação-mestre
+ * (StandardInventory, para expandir ranges).
  */
-
-export const sourceRefSchema = z.object({
-  book: usfmBookSchema,
-  chapter: z.number().int().positive(),
-  verse: z.number().int().positive(),
-  /** Tradição de versificação da fonte (ex.: hebraica, grega, latina). */
-  tradition: z.string().min(1),
-});
-export type SourceRef = z.infer<typeof sourceRefSchema>;
-
-/** Resultado do mapeamento: um verso-fonte pode mapear para 0..n versos KJV (splits/merges). */
-export const mappedRefSchema = z.object({
-  book: usfmBookSchema,
-  chapter: z.number().int().positive(),
-  verse: z.number().int().positive(),
-  /** Parte do verso quando há split (ex.: "a"/"b"); null quando 1:1. */
-  subverse: z.string().nullable(),
-});
-export type MappedRef = z.infer<typeof mappedRefSchema>;
-
-export interface VersificationMapper {
-  /** Mapeia uma referência da tradição da fonte para a versificação-mestre KJV. */
-  toKjv(ref: SourceRef): MappedRef[];
+export function loadTvtms(
+  tsv: string,
+  sourceInventory: SourceInventory,
+  standardInventory: StandardInventory,
+): VersificationMapper {
+  const { rules } = parseTvtmsExpanded(tsv);
+  return new TvtmsMapper(rules, sourceInventory, standardInventory);
 }
 
-export function loadTvtms(_tsv: string): VersificationMapper {
-  throw new NotImplementedError("carregador TVTMS");
-}
+export * from "./tvtms/contract.js";
+export * from "./tvtms/books.js";
+export * from "./tvtms/refs.js";
+export * from "./tvtms/tests-grammar.js";
+export * from "./tvtms/expanded.js";
+export * from "./tvtms/mapper.js";
