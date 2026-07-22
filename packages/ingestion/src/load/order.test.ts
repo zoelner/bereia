@@ -80,6 +80,7 @@ function mockOriginalWord(canonicalId: string, position: number): OriginalWord {
     strongId: null,
     strongRaw: null,
     morphology: null,
+    edition: null,
   };
 }
 
@@ -472,9 +473,9 @@ describe("determinismo byte a byte: mesma entrada em ordens diferentes → mesma
     const [first, ...rest] = outputs;
     for (const output of rest) expect(output).toBe(first);
     expect(first).toMatchInlineSnapshot(`
-      "{"canonicalId":"GEN_1_1","position":0,"lexeme":"mock-lexeme-0","strongId":null,"strongRaw":null,"morphology":null}
-      {"canonicalId":"GEN_1_1","position":1,"lexeme":"mock-lexeme-1","strongId":null,"strongRaw":null,"morphology":null}
-      {"canonicalId":"EXO_1_1","position":0,"lexeme":"mock-lexeme-0","strongId":null,"strongRaw":null,"morphology":null}
+      "{"canonicalId":"GEN_1_1","position":0,"lexeme":"mock-lexeme-0","strongId":null,"strongRaw":null,"morphology":null,"edition":null}
+      {"canonicalId":"GEN_1_1","position":1,"lexeme":"mock-lexeme-1","strongId":null,"strongRaw":null,"morphology":null,"edition":null}
+      {"canonicalId":"EXO_1_1","position":0,"lexeme":"mock-lexeme-0","strongId":null,"strongRaw":null,"morphology":null,"edition":null}
       "
     `);
   });
