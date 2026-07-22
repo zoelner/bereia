@@ -21,7 +21,8 @@ export const canonicalVerseSchema = z.object({
   id: canonicalIdSchema,
   book: usfmBookSchema,
   chapter: z.number().int().positive(),
-  verse: z.number().int().positive(),
+  /** 0 = título de Salmo (ex.: PSA_3_0); o pipeline produz canonical_ids com verse=0. */
+  verse: z.number().int().nonnegative(),
   canonStatus: canonStatusSchema,
   theologicalCategory: z.string().nullable(),
 });
