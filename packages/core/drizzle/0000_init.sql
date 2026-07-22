@@ -48,6 +48,7 @@ CREATE TABLE original_words (
   position integer NOT NULL,
   lexeme text NOT NULL,
   strong_id text,
+  strong_raw text, -- dStrong bruto do STEPBible (Q2 do plano)
   morphology text,
   PRIMARY KEY (canonical_id, position)
 );

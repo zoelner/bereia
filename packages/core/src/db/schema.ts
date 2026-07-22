@@ -69,6 +69,7 @@ export const originalWords = pgTable(
     position: integer("position").notNull(),
     lexeme: text("lexeme").notNull(),
     strongId: text("strong_id"),
+    strongRaw: text("strong_raw"), // dStrong bruto do STEPBible (Q2 do plano)
     morphology: text("morphology"),
   },
   (table) => [primaryKey({ columns: [table.canonicalId, table.position] })],
