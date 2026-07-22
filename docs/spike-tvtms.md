@@ -60,6 +60,9 @@ Implementado em `packages/ingestion/src/parsers/tvtms/`:
 5. ✅ Mapper (`mapper.ts`): regras ativas por avaliação de Tests, identidade como default, união de partes por tradição, desempate por `ref.tradition` e `AmbiguousMappingError` quando o mapeamento não é determinístico.
 6. ✅ **Gate: suíte de casos-ouro 100% verde contra o arquivo real** (`golden.test.ts`): títulos de Salmos (hebraico e inglês-separado), Ml 3:19-24→4:1-6 (contagem de palavras decide a tradição), Jl 3-4→2:28-3:21, At 8:37, 3Jo 14-15, Rm 16:25-27. Sem o arquivo (CI), a suíte é pulada, nunca falsamente verde.
 
+7. ✅ **Parser USFX + inventários reais** (`parsers/usfx/`, 2026-07-22): os casos-ouro agora TAMBÉM rodam contra a estrutura real da KJV, WEB e Bíblia Livre (`real-sources.test.ts`) — KJV→mestre e BLIVRE→mestre são identidade verificada; WEB tem At 8:37 vazio (texto crítico) e o mapper responde corretamente. Verificações de corpus: KJV e BLIVRE com exatamente 31.102 versos canônicos; títulos de Salmos capturados (`<d>`, inclusive o padrão acróstico da WEB no Sl 119 com `<ve/>` dentro do `<d>`); zero versos em ponte no cânon de 66 (pontes só nos apócrifos, pulados — asserção acusa se fonte futura trouxer).
+
 Pendências conhecidas para a ingestão (fora do gate):
-- `SourceInventory`/`StandardInventory` reais virão do parser USFX (Fase 1, próximo passo).
 - Como `verse 0` (título de Salmo) entra no `canonical_id` é decisão da ingestão (documentado em `contract.ts`).
+- A divergência 3Jo 14→15 não ocorre em nenhuma das 3 fontes reais (WEB segue numeração KJV ali) — coberta pelo caso-ouro simulado.
+- TAHOT/TAGNT (hebraico/grego) usam parser TSV próprio (`stepbible.ts`) — próximo passo; Salmos e Malaquias do TAHOT exercitarão os Renumber de verdade.
