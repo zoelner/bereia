@@ -84,14 +84,31 @@ describe("parseTagnt — estrutura (linhas sintéticas)", () => {
     expect(stats.skippedNonWord).toBe(5);
   });
 
-  it("preserva a ordem do arquivo e as posições (#01, #02) — determinismo", () => {
+  it("position é sequência densa 1-based por canonical_id na ordem do arquivo (não o #pos cru)", () => {
+    // #pos cru = 03, 04; a sequência densa reinicia em 1 por canonical_id, preservando a ordem.
     const tsv = [
       wordLine("Jhn.3.16#03=NKO", "ἠγάπησεν (ēgapēsen)", "G0025=V-AAI-3S"),
       wordLine("Jhn.3.16#04=NKO", "ὁ (ho)", "G3588=T-NSM"),
     ].join("\n");
     const rows = parseTagnt(tsv);
-    expect(rows.map((r) => r.position)).toEqual([3, 4]);
+    expect(rows.map((r) => r.position)).toEqual([1, 2]);
     expect(rows.map((r) => r.canonicalId)).toEqual(["JHN_3_16", "JHN_3_16"]);
+  });
+
+  it("merge NRSV→KJV via colchete não colide na PK (canonical_id, position): posições densas", () => {
+    // Dois versos-fonte colapsam no MESMO canonical_id (3JN_1_14) e cada parte reinicia o #pos
+    // em #01. O #pos cru duplicaria a PK (1,2 ↔ 1,2); a sequência densa dá 1..4 sem colisão.
+    const tsv = [
+      wordLine("3Jn.1.14#01=K", "εἰρήνη (eirēnē)", "G1515=N-NSF"),
+      wordLine("3Jn.1.14#02=K", "σοι (soi)", "G4771=P-2DS"),
+      wordLine("3Jn.1.15[1.14]#01=K", "ἀσπάζονταί (aspazontai)", "G0782=V-PNI-3P"),
+      wordLine("3Jn.1.15[1.14]#02=K", "σε (se)", "G4771=P-2AS"),
+    ].join("\n");
+    const rows = parseTagnt(tsv);
+    expect(rows.every((r) => r.canonicalId === "3JN_1_14")).toBe(true);
+    expect(rows.map((r) => r.position)).toEqual([1, 2, 3, 4]);
+    // Chave (canonical_id, position) única — PK de original_words preservada.
+    expect(new Set(rows.map((r) => `${r.canonicalId}#${r.position}`)).size).toBe(rows.length);
   });
 
   it("EXPLODE (com nº de linha) numa linha de palavra sem grego (col 2 vazia)", () => {
@@ -248,8 +265,18 @@ describe.skipIf(!hasFiles)("TAGNT real — 2 arquivos pinados (manifest sha256)"
   });
 
   it("3Jn: NRSV 1.14 e 1.15 colapsam no KJV 1.14 — 3JN_1_14 tem 21 palavras, 3JN_1_15 não existe", () => {
-    expect(wordsOf(actRev, "3JN_1_14")).toHaveLength(21); // 10 (1.14) + 11 (1.15[1.14])
+    const merged = wordsOf(actRev, "3JN_1_14");
+    expect(merged).toHaveLength(21); // 10 (1.14) + 11 (1.15[1.14])
     expect(wordsOf(actRev, "3JN_1_15")).toHaveLength(0);
+    // A sequência densa dá posições 1..21 únicas (o #pos cru reiniciaria em #01, colidindo).
+    expect(merged.map((r) => r.position)).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
+  });
+
+  it("(canonical_id, position) é chave ÚNICA em cada arquivo real (PK original_words, sem colisão)", () => {
+    for (const rows of [matJhn, actRev]) {
+      const keys = new Set(rows.map((r) => `${r.canonicalId}#${r.position}`));
+      expect(keys.size).toBe(rows.length);
+    }
   });
 
   it("Rom 16:24 (verso só-TR ausente no NA): 11 palavras, todas KO (TR sim, NA não)", () => {

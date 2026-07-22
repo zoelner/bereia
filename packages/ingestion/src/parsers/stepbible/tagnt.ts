@@ -86,10 +86,22 @@ function resolveStrong(col4: string, line: number): {
   }
 }
 
-/** Parseia o TSV de um arquivo TAGNT inteiro; devolve as palavras + estatística de varredura. */
+/**
+ * Parseia o TSV de um arquivo TAGNT inteiro; devolve as palavras + estatística de varredura.
+ *
+ * A `position` NÃO é o `#pos` cru do STEPBible: é uma sequência 1-based densa POR
+ * `canonical_id`, na ordem de leitura do arquivo (mesmo padrão do TAHOT em
+ * `parseTahotDetailed`). Motivo: nos merges NRSV→KJV via colchete `[KJV]`, dois versos-fonte
+ * colapsam no MESMO canonical_id e cada parte reinicia o `#pos` em `#01` — `3Jn.1.14#01..10`
+ * + `3Jn.1.15[1.14]#01..11` caem ambos em `3JN_1_14`, duplicando as posições 1..10. Como
+ * `(canonical_id, position)` é PK de `original_words` (CLAUDE.md §5), o `#pos` cru colidiria.
+ * A sequência por ordem de arquivo (sha256 pinado) é determinística, única e preserva a
+ * leitura. O `#pos` cru não é guardado em campo nenhum — perda consciente, simétrica ao TAHOT.
+ */
 export function parseTagntFile(tsv: string): TagntParseResult {
   const lines = tsv.split("\n");
   const rows: TaggedWordRow[] = [];
+  const nextPosition = new Map<string, number>();
   let skippedNonWord = 0;
 
   for (let i = 0; i < lines.length; i++) {
@@ -117,12 +129,10 @@ export function parseTagntFile(tsv: string): TagntParseResult {
 
     let canonical: { book: UsfmBook; chapter: number; verse: number } | null;
     let editionRaw: string;
-    let position: number;
     try {
       const ref = parseTagntRef(col1);
       canonical = stepCanonicalRef(ref);
       editionRaw = ref.wordType.raw;
-      position = ref.position;
     } catch (err) {
       throw new TagntParseError(lineNo, (err as Error).message);
     }
@@ -135,8 +145,14 @@ export function parseTagntFile(tsv: string): TagntParseResult {
 
     const { strongId, strongRaw, morphology } = resolveStrong(col4, lineNo);
 
+    // Sequência densa 1-based por canonical_id (ver doc da função): o `#pos` cru colide
+    // nos merges via colchete, esta não.
+    const canonicalId = makeCanonicalId(canonical);
+    const position = (nextPosition.get(canonicalId) ?? 0) + 1;
+    nextPosition.set(canonicalId, position);
+
     const row = taggedWordRowSchema.parse({
-      canonicalId: makeCanonicalId(canonical),
+      canonicalId,
       position,
       lexeme,
       strongId,
