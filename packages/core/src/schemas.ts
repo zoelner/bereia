@@ -45,6 +45,8 @@ export const originalWordSchema = z.object({
   position: z.number().int().nonnegative(),
   lexeme: z.string().min(1),
   strongId: z.string().nullable(),
+  /** dStrong bruto do STEPBible (letra de desambiguação + tags H9xxx que se perdem no strongId). */
+  strongRaw: z.string().nullable(),
   morphology: z.string().nullable(),
 });
 export type OriginalWord = z.infer<typeof originalWordSchema>;
