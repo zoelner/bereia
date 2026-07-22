@@ -30,9 +30,9 @@
  *   `selfLoopsRemoved`.
  * - **Endpoints inexistentes no mestre → descarte com estatística (OQ-4):**
  *   uma edge cujo `sourceId` OU `targetId` não esteja no inventário-mestre é
- *   descartada e contada (`discardedOutOfMaster`). Fonte real: diferenças
- *   residuais NRSV↔KJV do NT que a OpenBible referencia (ex.: 2Co 13:14,
- *   3Jo 1:15, Ap 12:18) e que não resolvem contra a KJV-mestre. O build FALHA
+ *   descartada e contada (`discardedOutOfMaster`). Fonte real: no corpus atual
+ *   há exatamente 1 residual NRSV↔KJV — 3Jo 1:15 como source (a KJV-mestre
+ *   encerra 3João no v.14); refs como 2Co 13:14 RESOLVEM no mestre. O build FALHA
  *   ruidosamente se a taxa passar do teto (`DEFAULT_MAX_DISCARD_RATE`, ~0,5%)
  *   — indica drift de versificação/book-map, não residual esperado.
  * - **Precedência FK antes de self-loop:** o descarte por endpoint fora do
