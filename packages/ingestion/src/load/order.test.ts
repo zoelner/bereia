@@ -6,11 +6,14 @@ import {
   compareCanonicalRef,
   compareCanonicalVerse,
   compareEdge,
+  compareEdgeKey,
   compareOrdinal,
   compareOriginalWord,
   compareStrongsEntry,
   compareVerseText,
+  edgeSortKeyOf,
   sortDeterministic,
+  sortDeterministicBy,
 } from "./order.js";
 import {
   readCanonicalVerses,
@@ -51,17 +54,21 @@ function mockVerse(book: UsfmBook, chapter: number, verse: number): CanonicalVer
   };
 }
 
-function mockVerseText(canonicalId: string, translation: string): VerseText {
+function mockVerseText(
+  canonicalId: string,
+  translation: string,
+  overrides: Partial<Pick<VerseText, "thematicTags" | "authorizedLevels">> = {},
+): VerseText {
   return {
     canonicalId,
     translation,
     text: `mock-text-${canonicalId}-${translation}`,
     embeddingModel: null,
-    thematicTags: [],
+    thematicTags: overrides.thematicTags ?? [],
     culturalContext: null,
     humanReviewed: false,
     reviewedBy: null,
-    authorizedLevels: ["public"],
+    authorizedLevels: overrides.authorizedLevels ?? ["public"],
   };
 }
 
@@ -136,7 +143,7 @@ describe("chain", () => {
 });
 
 describe("compareOrdinal", () => {
-  it("compara por code point, não por locale", () => {
+  it("compara por code unit UTF-16, não por locale", () => {
     expect(compareOrdinal("a", "b")).toBeLessThan(0);
     expect(compareOrdinal("b", "a")).toBeGreaterThan(0);
     expect(compareOrdinal("kjv", "kjv")).toBe(0);
@@ -287,6 +294,30 @@ describe("compareEdge", () => {
   });
 });
 
+describe("sortDeterministicBy / edgeSortKeyOf / compareEdgeKey", () => {
+  const edges = [
+    mockEdge("GEN_1_1", "REV_1_1"),
+    mockEdge("GEN_1_1", "JHN_1_1", "thematic"),
+    mockEdge("GEN_1_1", "JHN_1_1", "tsk"),
+    mockEdge("EXO_1_1", "GEN_1_1"),
+  ];
+
+  it("decorate-sort-undecorate produz exatamente a mesma ordem que compareEdge direto", () => {
+    const viaCompareEdge = sortDeterministic(edges, compareEdge);
+    const viaDecorated = sortDeterministicBy(edges, edgeSortKeyOf, compareEdgeKey);
+    expect(viaDecorated).toEqual(viaCompareEdge);
+  });
+
+  it("é determinístico independentemente da ordem de entrada", () => {
+    const expectedOrder = sortDeterministic(edges, compareEdge).map((e) => `${e.sourceId}->${e.targetId}:${e.kind}`);
+    for (const seed of [1, 4, 8]) {
+      const shuffled = shuffle(edges, seed);
+      const sorted = sortDeterministicBy(shuffled, edgeSortKeyOf, compareEdgeKey);
+      expect(sorted.map((e) => `${e.sourceId}->${e.targetId}:${e.kind}`)).toEqual(expectedOrder);
+    }
+  });
+});
+
 // --- writer: chaves fixas, LF, sem trailing space -----------------------------
 
 describe("serializeJsonLine", () => {
@@ -322,6 +353,26 @@ describe("writeJsonl", () => {
 
   it("lista vazia produz string vazia", () => {
     expect(writeJsonl([], ["a"])).toBe("");
+  });
+});
+
+describe("writeVerseTexts: canonicaliza arrays-conjunto (thematicTags, authorizedLevels)", () => {
+  it("ordena thematicTags e authorizedLevels ordinalmente, independente da ordem de inserção", () => {
+    const row = mockVerseText("GEN_1_1", "kjv", {
+      thematicTags: ["mock-tag-z", "mock-tag-a", "mock-tag-m"],
+      authorizedLevels: ["curated", "public"],
+    });
+    const content = writeVerseTexts([row]);
+    const parsed = JSON.parse(content.trimEnd()) as VerseText;
+    expect(parsed.thematicTags).toEqual(["mock-tag-a", "mock-tag-m", "mock-tag-z"]);
+    expect(parsed.authorizedLevels).toEqual(["public", "curated"].slice().sort());
+  });
+
+  it("byte a byte idêntico independente da ordem de inserção das tags de entrada", () => {
+    const base = mockVerseText("GEN_1_1", "kjv");
+    const variantA: VerseText = { ...base, thematicTags: ["mock-tag-z", "mock-tag-a"] };
+    const variantB: VerseText = { ...base, thematicTags: ["mock-tag-a", "mock-tag-z"] };
+    expect(writeVerseTexts([variantA])).toBe(writeVerseTexts([variantB]));
   });
 });
 
@@ -398,6 +449,49 @@ describe("determinismo byte a byte: mesma entrada em ordens diferentes → mesma
     `);
   });
 
+  it("verse_texts.jsonl é idêntico independente da ordem de entrada (pina bytes: mais campos, arrays, nullables)", () => {
+    const rows = [
+      mockVerseText("GEN_1_1", "web"),
+      mockVerseText("GEN_1_1", "kjv", { thematicTags: ["mock-tag-z", "mock-tag-a"], authorizedLevels: ["curated", "public"] }),
+      mockVerseText("EXO_1_1", "kjv"),
+    ];
+    const outputs = [0, 3, 11].map((seed) => writeVerseTexts(sortDeterministic(shuffle(rows, seed), compareVerseText)));
+    const [first, ...rest] = outputs;
+    for (const output of rest) expect(output).toBe(first);
+    expect(first).toMatchInlineSnapshot(`
+      "{"canonicalId":"GEN_1_1","translation":"kjv","text":"mock-text-GEN_1_1-kjv","embeddingModel":null,"thematicTags":["mock-tag-a","mock-tag-z"],"culturalContext":null,"humanReviewed":false,"reviewedBy":null,"authorizedLevels":["curated","public"]}
+      {"canonicalId":"GEN_1_1","translation":"web","text":"mock-text-GEN_1_1-web","embeddingModel":null,"thematicTags":[],"culturalContext":null,"humanReviewed":false,"reviewedBy":null,"authorizedLevels":["public"]}
+      {"canonicalId":"EXO_1_1","translation":"kjv","text":"mock-text-EXO_1_1-kjv","embeddingModel":null,"thematicTags":[],"culturalContext":null,"humanReviewed":false,"reviewedBy":null,"authorizedLevels":["public"]}
+      "
+    `);
+  });
+
+  it("original_words.jsonl é idêntico independente da ordem de entrada", () => {
+    const rows = [mockOriginalWord("GEN_1_1", 1), mockOriginalWord("GEN_1_1", 0), mockOriginalWord("EXO_1_1", 0)];
+    const outputs = [0, 4, 13].map((seed) => writeOriginalWords(sortDeterministic(shuffle(rows, seed), compareOriginalWord)));
+    const [first, ...rest] = outputs;
+    for (const output of rest) expect(output).toBe(first);
+    expect(first).toMatchInlineSnapshot(`
+      "{"canonicalId":"GEN_1_1","position":0,"lexeme":"mock-lexeme-0","strongId":null,"strongRaw":null,"morphology":null}
+      {"canonicalId":"GEN_1_1","position":1,"lexeme":"mock-lexeme-1","strongId":null,"strongRaw":null,"morphology":null}
+      {"canonicalId":"EXO_1_1","position":0,"lexeme":"mock-lexeme-0","strongId":null,"strongRaw":null,"morphology":null}
+      "
+    `);
+  });
+
+  it("strongs.jsonl é idêntico independente da ordem de entrada", () => {
+    const rows = [mockStrongsEntry("G0002", "greek"), mockStrongsEntry("H0430", "hebrew"), mockStrongsEntry("H0001", "hebrew")];
+    const outputs = [0, 6, 21].map((seed) => writeStrongsEntries(sortDeterministic(shuffle(rows, seed), compareStrongsEntry)));
+    const [first, ...rest] = outputs;
+    for (const output of rest) expect(output).toBe(first);
+    expect(first).toMatchInlineSnapshot(`
+      "{"id":"H0001","language":"hebrew","lemma":"mock-lemma-H0001","transliteration":null,"definition":"mock-definition-H0001"}
+      {"id":"H0430","language":"hebrew","lemma":"mock-lemma-H0430","transliteration":null,"definition":"mock-definition-H0430"}
+      {"id":"G0002","language":"greek","lemma":"mock-lemma-G0002","transliteration":null,"definition":"mock-definition-G0002"}
+      "
+    `);
+  });
+
   it("edges.jsonl é idêntico independente da ordem de entrada", () => {
     const edges = [
       mockEdge("PSA_3_1", "GEN_1_1"),
@@ -408,5 +502,12 @@ describe("determinismo byte a byte: mesma entrada em ordens diferentes → mesma
     const outputs = [0, 5, 9, 17].map((seed) => writeEdges(sortDeterministic(shuffle(edges, seed), compareEdge)));
     const [first, ...rest] = outputs;
     for (const output of rest) expect(output).toBe(first);
+    expect(first).toMatchInlineSnapshot(`
+      "{"sourceId":"GEN_1_1","targetId":"JHN_1_1","kind":"tsk"}
+      {"sourceId":"GEN_1_1","targetId":"JHN_1_1","kind":"thematic"}
+      {"sourceId":"GEN_1_1","targetId":"REV_1_1","kind":"tsk"}
+      {"sourceId":"PSA_3_1","targetId":"GEN_1_1","kind":"tsk"}
+      "
+    `);
   });
 });

@@ -44,10 +44,14 @@ export function chain(...results: readonly number[]): number {
 }
 
 /**
- * Comparação ordinal (code point a code point) de strings — determinística
- * e independente de locale/ICU do ambiente de execução (`localeCompare`
- * varia entre plataformas e É fonte de não-determinismo, por isso não é
- * usado aqui).
+ * Comparação ordinal de strings via `<`/`>` — compara code unit UTF-16 a
+ * code unit UTF-16 (não code point; par substituto seria dividido em duas
+ * unidades de 16 bits), determinística e independente de locale/ICU do
+ * ambiente de execução (`localeCompare` varia entre plataformas e É fonte
+ * de não-determinismo, por isso não é usado aqui). Correto para o domínio
+ * atual (ASCII: translation, id Strong, tags) — fora de ASCII a ordem
+ * ainda é determinística, só não corresponde à ordem "visual" de code
+ * points fora do BMP.
  */
 export function compareOrdinal(a: string, b: string): number {
   if (a < b) return -1;
@@ -74,7 +78,18 @@ export function compareCanonicalRef(a: CanonicalRef, b: CanonicalRef): number {
   return chain(bookIndex(a.book) - bookIndex(b.book), a.chapter - b.chapter, a.verse - b.verse);
 }
 
-/** Mesma ordem de `compareCanonicalRef`, a partir do `canonical_id` bruto (ex.: `sourceId`/`targetId` de `edges`). */
+/**
+ * Mesma ordem de `compareCanonicalRef`, a partir do `canonical_id` bruto
+ * (ex.: `sourceId`/`targetId` de `edges`).
+ *
+ * Custo conhecido: `parseCanonicalId` valida via Zod (regex + `refine`) a
+ * cada chamada — usar este comparador direto num `Array.prototype.sort` de
+ * O(n) itens custa O(n log n) parses, reparseando o MESMO id várias vezes.
+ * Para listas grandes (ex.: `edges.jsonl`, ~340k linhas em N7 build-edges)
+ * prefira `sortDeterministicBy(items, keyOf, compareKey)` com uma `keyOf`
+ * que chama `parseCanonicalId` uma única vez por item (O(n)) — ver
+ * `edgeSortKeyOf`/`compareEdgeKey` abaixo para o caso de `edges`.
+ */
 export function compareCanonicalId(a: CanonicalId, b: CanonicalId): number {
   return compareCanonicalRef(parseCanonicalId(a), parseCanonicalId(b));
 }
@@ -122,11 +137,49 @@ const EDGE_KIND_ORDER: Record<EdgeKind, number> = {
   manual: 2,
 };
 
-/** `edges.jsonl`: `sourceId` → `targetId` → `kind` (plano §3.3). */
+/**
+ * `edges.jsonl`: `sourceId` → `targetId` → `kind` (plano §3.3). Mesmo custo
+ * de `parseCanonicalId` por comparação descrito em `compareCanonicalId` —
+ * para o volume real de `edges.jsonl` prefira `sortDeterministicBy(edges,
+ * edgeSortKeyOf, compareEdgeKey)`, que produz exatamente a mesma ordem.
+ */
 export function compareEdge(a: Edge, b: Edge): number {
   return chain(
     compareCanonicalId(a.sourceId, b.sourceId),
     compareCanonicalId(a.targetId, b.targetId),
+    EDGE_KIND_ORDER[a.kind] - EDGE_KIND_ORDER[b.kind],
+  );
+}
+
+/** Chave pré-computada de uma `edge` para `sortDeterministicBy` — ver `compareEdgeKey`. */
+export interface EdgeSortKey {
+  source: CanonicalRef;
+  target: CanonicalRef;
+  kind: EdgeKind;
+}
+
+/**
+ * `keyOf` de decorate-sort-undecorate para `edges`: parseia `sourceId`/
+ * `targetId` (Zod) UMA vez por item, em vez de a cada comparação do sort
+ * (ver custo documentado em `compareCanonicalId`/`compareEdge`).
+ */
+export function edgeSortKeyOf(edge: Edge): EdgeSortKey {
+  return {
+    source: parseCanonicalId(edge.sourceId),
+    target: parseCanonicalId(edge.targetId),
+    kind: edge.kind,
+  };
+}
+
+/**
+ * Compara duas `EdgeSortKey` já decoradas — mesma ordem total de
+ * `compareEdge`, sem reparsear `canonical_id`. Uso: `sortDeterministicBy(
+ * edges, edgeSortKeyOf, compareEdgeKey)`.
+ */
+export function compareEdgeKey(a: EdgeSortKey, b: EdgeSortKey): number {
+  return chain(
+    compareCanonicalRef(a.source, b.source),
+    compareCanonicalRef(a.target, b.target),
     EDGE_KIND_ORDER[a.kind] - EDGE_KIND_ORDER[b.kind],
   );
 }
@@ -139,4 +192,23 @@ export function compareEdge(a: Edge, b: Edge): number {
  */
 export function sortDeterministic<T>(items: readonly T[], compare: Comparator<T>): T[] {
   return [...items].sort(compare);
+}
+
+/**
+ * Variante decorate-sort-undecorate de `sortDeterministic`: computa
+ * `keyOf(item)` UMA vez por item (O(n)) antes de ordenar, em vez de deixar
+ * o comparador recomputar a chave a cada comparação (O(n log n)) — usar
+ * quando `keyOf` não é trivial (ex.: `parseCanonicalId`, que valida via
+ * Zod) e a lista é grande o bastante para o custo importar (ex.: `edges`,
+ * N7). Mesma ordem total de `compareKey` sobre `keyOf(item)`; não muta o
+ * array de entrada.
+ */
+export function sortDeterministicBy<T, K>(
+  items: readonly T[],
+  keyOf: (item: T) => K,
+  compareKey: Comparator<K>,
+): T[] {
+  const decorated = items.map((item) => ({ item, key: keyOf(item) }));
+  decorated.sort((a, b) => compareKey(a.key, b.key));
+  return decorated.map((entry) => entry.item);
 }

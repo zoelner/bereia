@@ -10,6 +10,11 @@
  * ordem de inserção de chaves string em JS) — fonte única, evita duplicar e
  * driftar a lista de campos entre `core` e `ingestion` (ADR-007: `ingestion`
  * depende de `core`, nunca o contrário).
+ *
+ * Campos array cuja semântica é CONJUNTO (`VerseText.thematicTags`,
+ * `VerseText.authorizedLevels`) são canonicalizados (ordem ordinal fixa)
+ * pelo writer antes de gravar — ver `sortedArrayCopy`/`writeVerseTexts` —
+ * para não depender da ordem de inserção de quem produz o registro.
  */
 
 import {
@@ -21,6 +26,7 @@ import {
 } from "@bereia/core";
 import type { CanonicalVerse, Edge, OriginalWord, StrongsEntry, VerseText } from "@bereia/core";
 import type { ZodRawShape, ZodType } from "zod";
+import { compareOrdinal } from "./order.js";
 
 function keyOrderOf<Shape extends ZodRawShape>(shape: Shape): readonly (keyof Shape & string)[] {
   return Object.freeze(Object.keys(shape)) as readonly (keyof Shape & string)[];
@@ -108,8 +114,26 @@ export function readCanonicalVerses(content: string): CanonicalVerse[] {
   return readJsonl(content, canonicalVerseSchema);
 }
 
+/**
+ * Ordena uma cópia de `items` ordinalmente — usado para canonicalizar
+ * campos de `VerseText` cujo tipo é array mas cuja SEMÂNTICA é conjunto
+ * (`thematicTags`, `authorizedLevels`): a ordem de inserção não carrega
+ * significado, então fixá-la aqui (em vez de exigir que todo produtor
+ * upstream — N5, curadoria — já entregue ordenado) fecha um contrato
+ * implícito e garante determinismo byte a byte do JSONL mesmo se a ordem
+ * de entrada variar.
+ */
+function sortedArrayCopy<T extends string>(items: readonly T[]): T[] {
+  return [...items].sort(compareOrdinal);
+}
+
 export function writeVerseTexts(records: readonly VerseText[]): string {
-  return writeJsonl(records, VERSE_TEXT_KEYS);
+  const canonicalized = records.map((record) => ({
+    ...record,
+    thematicTags: sortedArrayCopy(record.thematicTags),
+    authorizedLevels: sortedArrayCopy(record.authorizedLevels),
+  }));
+  return writeJsonl(canonicalized, VERSE_TEXT_KEYS);
 }
 export function readVerseTexts(content: string): VerseText[] {
   return readJsonl(content, verseTextSchema);
