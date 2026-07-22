@@ -1,28 +1,10 @@
-import { z } from "zod";
-import { canonicalIdSchema } from "@bereia/core";
-import { NotImplementedError } from "../errors.js";
-
 /**
- * Parsers dos TSV do STEPBible (CC BY 4.0):
- * - TAHOT: AT hebraico tageado (Strong + morfologia)
- * - TAGNT: NT grego (TR e NA27/28 marcados por edição)
+ * Parsers dos TSV do STEPBible (CC BY 4.0), ver docs/plano-stepbible.md:
+ * - TAHOT: AT hebraico tageado (Strong + morfologia), 4 arquivos amalgamados.
+ * - TAGNT: NT grego (TR e NA27/28 marcados por edição, por palavra), 2 arquivos.
+ * A referência da coluna 1 já traz o KJV embutido (produtor do canonical_id,
+ * ADR-002 §3.1); o gate de versificação (N5) faz a checagem cruzada com o
+ * mapper TVTMS sobre o TAHOT real. Implementação em `stepbible/` (N1-N5);
+ * este módulo é só a fachada do pacote.
  */
-
-export const taggedWordRowSchema = z.object({
-  canonicalId: canonicalIdSchema,
-  position: z.number().int().nonnegative(),
-  lexeme: z.string().min(1),
-  strongId: z.string().regex(/^[HG]\d{1,4}$/).nullable(),
-  morphology: z.string().nullable(),
-  /** TAGNT marca a edição (TR, NA27/28); TAHOT não usa. */
-  edition: z.string().nullable(),
-});
-export type TaggedWordRow = z.infer<typeof taggedWordRowSchema>;
-
-export function parseTahot(_tsv: string): TaggedWordRow[] {
-  throw new NotImplementedError("parser TAHOT");
-}
-
-export function parseTagnt(_tsv: string): TaggedWordRow[] {
-  throw new NotImplementedError("parser TAGNT");
-}
+export * from "./stepbible/index.js";
