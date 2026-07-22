@@ -2,7 +2,7 @@ import type { UsfmBook } from "@bereia/core";
 import { tvtmsBookToUsfm } from "../tvtms/books.js";
 import {
   tagntWordTypeSchema,
-  tahotTextTypeSchema,
+  tahotTextBaseSchema,
   type EditionPresence,
   type TagntWordType,
   type TahotTextType,
@@ -73,8 +73,24 @@ export interface TagntRef {
 export type StepRef = TahotRef | TagntRef;
 
 // TAHOT: livro (até o 1º ponto), cap.verso, (heb) opcional, #pos numérico, =textType.
+// #pos: normalmente 2 dígitos, mas 4 dígitos nas palavras reconstruídas/LXX (base X) —
+// ex.: Jdg.16.13#2503=X; a semântica do offset é do parser TAHOT (N3), aqui só o inteiro.
 const TAHOT_RE =
-  /^([^.]+)\.(\d{1,3})\.(\d{1,3})(?:\((\d{1,3})\.(\d{1,3})\))?#(\d{1,3})=(.+)$/;
+  /^([^.]+)\.(\d{1,3})\.(\d{1,3})(?:\((\d{1,3})\.(\d{1,3})\))?#(\d+)=(.+)$/;
+// TextType: base MAIÚSCULA fechada + marcador parentético cru opcional (Q(K), L(abh), LBH(a+C)).
+const TAHOT_TEXTTYPE_RE = /^([A-Z]+)(?:\(([^)]*)\))?$/;
+
+/** Decompõe o campo TextType do TAHOT em base fechada + marcador cru; base desconhecida explode. */
+function parseTahotTextType(field: string, source: string): TahotTextType {
+  const m = TAHOT_TEXTTYPE_RE.exec(field);
+  if (!m) throw new StepRefParseError(source, `TextType malformado "${field}"`);
+  const [, base, marker] = m;
+  const parsedBase = tahotTextBaseSchema.safeParse(base);
+  if (!parsedBase.success) {
+    throw new StepRefParseError(source, `base de TextType desconhecida "${base ?? ""}" em "${field}"`);
+  }
+  return { raw: field, base: parsedBase.data, marker: marker ?? null };
+}
 
 // TAGNT: livro.cap.verso na ref primária; o resto (refs alternativas) é o "tail".
 const TAGNT_PRIMARY_RE = /^([^.]+)\.(\d{1,3})\.(\d{1,3})(.*)$/;
@@ -89,10 +105,6 @@ export function parseTahotRef(col1: string): TahotRef {
     throw new StepRefParseError(raw, "não casa Book.Chapter.Verse[(HebCap.HebVerso)]#Pos=TextType");
   }
   const [, bookCode, chap, verse, hebChap, hebVerse, pos, typeRaw] = m;
-  const parsedType = tahotTextTypeSchema.safeParse(typeRaw);
-  if (!parsedType.success) {
-    throw new StepRefParseError(raw, `TextType desconhecido "${typeRaw ?? ""}"`);
-  }
   return {
     source: "tahot",
     book: tvtmsBookToUsfm(bookCode as string),
@@ -104,7 +116,7 @@ export function parseTahotRef(col1: string): TahotRef {
         ? { chapter: Number(hebChap), verse: Number(hebVerse) }
         : null,
     position: Number(pos),
-    textType: parsedType.data,
+    textType: parseTahotTextType(typeRaw as string, raw),
   };
 }
 
@@ -119,7 +131,7 @@ export function parseTagntRef(col1: string): TagntRef {
   if (eqIdx === -1) throw new StepRefParseError(raw, "falta '=WordType' após a posição");
   const posRaw = right.slice(0, eqIdx);
   const wordTypeRaw = right.slice(eqIdx + 1);
-  if (!/^\d{1,3}$/.test(posRaw)) throw new StepRefParseError(raw, `posição inválida "${posRaw}"`);
+  if (!/^\d+$/.test(posRaw)) throw new StepRefParseError(raw, `posição inválida "${posRaw}"`);
 
   const pm = TAGNT_PRIMARY_RE.exec(left);
   if (!pm) throw new StepRefParseError(raw, "não casa Book.Chapter.Verse na ref primária");
@@ -165,14 +177,19 @@ export function parseTagntRef(col1: string): TagntRef {
   };
 }
 
-/** Decompõe o WordType do TAGNT (ex.: "NKO", "N(k)O", "no", "k") por edição. */
+/**
+ * Decompõe o WordType do TAGNT (ex.: "NKO", "N(k)O", "N(K)O", "no", "k", "(k)O") por edição.
+ * Cada letra vira presença em dois eixos: minúscula ⇒ variant; entre parênteses ⇒ bracketed.
+ * Assim N(K)O e N(k)O ficam distintos (Finding 3). Letra/edição repetida ou desconhecida explode.
+ */
 function parseWordType(rawType: string, source: string): TagntWordType {
   if (rawType === "") throw new StepRefParseError(source, "WordType vazio");
   let na: EditionPresence | null = null;
   let tr: EditionPresence | null = null;
   let other: EditionPresence | null = null;
 
-  const assign = (letter: string, presence: EditionPresence): void => {
+  const assign = (letter: string, bracketed: boolean): void => {
+    const presence: EditionPresence = { variant: letter !== letter.toUpperCase(), bracketed };
     switch (letter.toLowerCase()) {
       case "n":
         if (na !== null) throw new StepRefParseError(source, `edição N repetida em "${rawType}"`);
@@ -198,13 +215,13 @@ function parseWordType(rawType: string, source: string): TagntWordType {
       const close = rawType.indexOf(")", i);
       if (close === -1) throw new StepRefParseError(source, `parêntese não fechado em WordType "${rawType}"`);
       const inner = rawType.slice(i + 1, close);
-      if (inner.length !== 1) {
+      if (inner.length !== 1 || !/[A-Za-z]/.test(inner)) {
         throw new StepRefParseError(source, `parênteses de WordType devem conter 1 letra: "(${inner})"`);
       }
-      assign(inner, "variant");
+      assign(inner, true);
       i = close + 1;
     } else if (/[A-Za-z]/.test(ch)) {
-      assign(ch, ch === ch.toUpperCase() ? "firm" : "variant");
+      assign(ch, false);
       i += 1;
     } else {
       throw new StepRefParseError(source, `caractere inesperado "${ch}" em WordType "${rawType}"`);
