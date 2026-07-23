@@ -293,3 +293,26 @@ colisão real — registrado para o orquestrador.
   validado por teste de FK contra o dicionário real.
 - **OQ-8 (carimbo `embeddingModel`):** formato `"${MODEL_NAME}@${HF_REVISION}"` (ex.: `BAAI/bge-m3@<rev>`),
   usado em `verse_texts`/derived/Postgres e na trava ADR-005 — confirmar a string exata.
+
+## 7. Backlog técnico do fechamento (levantado na execução N8–N11)
+
+Itens NÃO-bloqueantes registrados pelos workers/verifiers; nenhum reabre decisão da §2 do CLAUDE.md.
+
+- **Proveniência dos zips (N8):** para eng-kjv, eng-web, por-biblialivre e openbible-xrefs, o
+  `data/sources/manifest.json` pina o sha256 do **.zip baixado**, não do arquivo extraído que o parser
+  lê (TAHOT/TAGNT/TVTMS/strongs já pinam o extraído). Fechar a cadeia exige mudança de formato do
+  manifest (data-steward) — pinar também o sha256 do extraído.
+- **Reprodutibilidade do hash de embeddings (N9):** o hash de regressão do `embed.test.ts` assume
+  floats bit-a-bit estáveis do BGE-M3 para o MESMO build Docker; entre microarquiteturas de CPU
+  distintas (BLAS) pode divergir. Falha é ruidosa (nunca verde-falso) e coerente com ADR-005; se o
+  projeto ganhar CI multi-máquina, reavaliar a âncora (ex.: tolerância numérica documentada).
+- **FK real de `original_words.strong_id` (N10):** o schema Drizzle/migration NÃO tem
+  `.references()` de `original_words.strong_id` → `strongs.id`; a garantia hoje é a checagem de
+  aplicação no load (`crossCheckIntegrity`). Avaliar promover a FK de banco (exige `ON DELETE`
+  pensado para o dicionário) numa evolução de schema.
+- **Controle de migrations (N10):** não há `drizzle-kit`/tabela de migrations; `0000`/`0001` são
+  aplicadas com guarda por `information_schema`. Funciona para 2 migrations; formalizar controle
+  quando o schema começar a evoluir (Fase 2+).
+- **Performance de reload (N10):** load completo em tabelas vazias ≈ 18s; re-run (DELETE+INSERT)
+  ≈ 2min40s. Se reload frequente virar requisito, investigar `COPY`/`TRUNCATE` com as tabelas de
+  curadoria (`curation_log`/`reports`/`interpretations`) movidas para fora do caminho de truncagem.
