@@ -77,6 +77,15 @@ export interface RetrievalService {
    * `getVerse` permanece INTOCADO (âncora ADR-008): shape simples
    * `{ verse, texts }`, sem palavras originais nem interpretações — barato
    * para os casos que só precisam do texto.
+   *
+   * Semântica de `null` vs. `texts: []` (mesma nuance de `getExegesis`
+   * abaixo): `null` é reservado a verso INEXISTENTE no cânon autorizado (sem
+   * linha em `canonical_verses`, ou `canon_status` fora do MVP); um verso
+   * existente cujas `verse_texts` são todas excluídas pelo hard filter de
+   * `authorized_levels` do `user` devolve um objeto NÃO-nulo com
+   * `texts: []` — não há coluna de controle de acesso por verso, então
+   * "nenhum texto autorizado" e "verso inexistente" são estados distintos
+   * por construção, nunca colapsados em `null`.
    */
   getVerse(canonicalId: CanonicalId, user: User): Promise<{ verse: CanonicalVerse; texts: VerseText[] } | null>;
   /**
@@ -90,7 +99,14 @@ export interface RetrievalService {
    * - Hard filter (`canon_status`, `authorized_levels`) aplicado ANTES de
    *   devolver qualquer linha — texto/palavra/interpretação não autorizados
    *   nunca vazam;
-   * - Verso inexistente (ou não autorizado para o `user`) → `null`.
+   * - `null` é reservado a verso INEXISTENTE no cânon autorizado (sem linha
+   *   em `canonical_verses`, ou `canon_status` fora do MVP) — NÃO a "verso
+   *   não autorizado" em geral. Um verso existente cujas `verse_texts` são
+   *   todas filtradas pelo hard filter de `authorized_levels` devolve um
+   *   objeto NÃO-nulo com `texts: []` (idem `originalWords`/`interpretations`
+   *   quando aplicável); não há coluna de controle de acesso por verso no
+   *   schema atual, então "nenhum texto autorizado" e "verso inexistente"
+   *   são estados distintos por construção.
    */
   getExegesis(canonicalId: CanonicalId, user: User): Promise<ExegesisResult | null>;
   getCrossReferences(canonicalId: CanonicalId, user: User, options?: CrossReferenceOptions): Promise<Edge[]>;
