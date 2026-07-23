@@ -89,8 +89,9 @@ const getVerseResultSchema = z.object({
 
 /**
  * Literal de array do Postgres (`text[]`) — mesmo contorno de
- * `search-theme.ts`/`cross-references.ts`/`exegesis.ts` (nunca `sql.array`,
- * ver docstring desses módulos para o motivo da corrida de tipo lazy).
+ * `search-theme.ts`/`cross-references.ts` (nunca `sql.array`, ver docstring
+ * desses módulos para o motivo da corrida de tipo lazy). `exegesis.ts` ainda
+ * usa `sql.array` — consolidação dos helpers é backlog (OQ-7/N3).
  */
 function formatTextArrayLiteral(values: readonly string[]): string {
   const escaped = values.map((value) => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
