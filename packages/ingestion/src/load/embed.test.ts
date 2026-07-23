@@ -17,6 +17,7 @@ import {
   embeddingRowSchema,
   readAllVerseTexts,
   runEmbedBatch,
+  readEmbeddingRowsFile,
   writeEmbeddingRows,
   type EmbedderClient,
   type EmbedResponse,
@@ -181,9 +182,11 @@ describe("runEmbedBatch — ordenação, determinismo e batching (fake client)",
     writeFixtureVerseTexts(canonicalDir, fixtures);
 
     const client = makeFakeClient();
-    const result = await runEmbedBatch({ canonicalDir, dataDir, client, outFile: path.join(dataDir, "out.jsonl") });
+    const outFile = path.join(dataDir, "out.jsonl");
+    await runEmbedBatch({ canonicalDir, dataDir, client, outFile });
 
-    expect(result.rows.map((r) => `${r.canonicalId}:${r.translation}`)).toEqual([
+    const rows = readEmbeddingRowsFile(outFile);
+    expect(rows.map((r) => `${r.canonicalId}:${r.translation}`)).toEqual([
       "GEN_1_1:KJV",
       "GEN_1_1:WEB",
       "PSA_23_1:KJV",
@@ -196,10 +199,11 @@ describe("runEmbedBatch — ordenação, determinismo e batching (fake client)",
     const canonicalDir = path.join(dataDir, "canonical");
     writeFixtureVerseTexts(canonicalDir, fixtures);
     const client = makeFakeClient();
-    const result = await runEmbedBatch({ canonicalDir, dataDir, client, outFile: path.join(dataDir, "out.jsonl") });
+    const outFile = path.join(dataDir, "out.jsonl");
+    const result = await runEmbedBatch({ canonicalDir, dataDir, client, outFile });
 
     expect(result.embeddingModel).toBe(EXPECTED_EMBEDDING_MODEL_STAMP);
-    for (const row of result.rows) {
+    for (const row of readEmbeddingRowsFile(outFile)) {
       expect(row.embeddingModel).toBe(EXPECTED_EMBEDDING_MODEL_STAMP);
       expect(() => embeddingRowSchema.parse(row)).not.toThrow();
     }
@@ -212,17 +216,18 @@ describe("runEmbedBatch — ordenação, determinismo e batching (fake client)",
 
     const calls: string[][] = [];
     const client = makeFakeClient({ calls });
+    const outFile = path.join(dataDir, "out.jsonl");
     const result = await runEmbedBatch({
       canonicalDir,
       dataDir,
       client,
       batchSize: 2,
-      outFile: path.join(dataDir, "out.jsonl"),
+      outFile,
     });
 
     expect(calls.map((batch) => batch.length)).toEqual([2, 2]); // 4 linhas / batchSize 2 = 2 lotes
-    expect(result.rows).toHaveLength(4);
-    expect(result.rows.map((r) => `${r.canonicalId}:${r.translation}`)).toEqual([
+    expect(result.rowCount).toBe(4);
+    expect(readEmbeddingRowsFile(outFile).map((r) => `${r.canonicalId}:${r.translation}`)).toEqual([
       "GEN_1_1:KJV",
       "GEN_1_1:WEB",
       "PSA_23_1:KJV",
@@ -400,8 +405,8 @@ describe.skipIf(!embedderUp)("integração real — sidecar de embedding em EMBE
       const outFile = path.join(dataDir, "regression.jsonl");
       const result = await runEmbedBatch({ canonicalDir, dataDir, client, outFile });
 
-      expect(result.rows).toHaveLength(REGRESSION_FIXTURE.length);
-      for (const row of result.rows) {
+      expect(result.rowCount).toBe(REGRESSION_FIXTURE.length);
+      for (const row of readEmbeddingRowsFile(outFile)) {
         expect(row.embedding).toHaveLength(1024);
       }
 

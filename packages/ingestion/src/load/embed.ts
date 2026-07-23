@@ -27,13 +27,13 @@
  * regressão e a integração fim-a-fim.
  */
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { canonicalIdSchema } from "@bereia/core";
 import type { VerseText } from "@bereia/core";
 import { compareVerseText, sortDeterministic } from "./order.js";
-import { readVerseTexts, writeJsonl } from "./jsonl.js";
+import { readJsonl, readVerseTexts, writeJsonl } from "./jsonl.js";
 
 // --- Trava de revisão (ADR-005) --------------------------------------------
 
@@ -208,6 +208,11 @@ export function writeEmbeddingRows(rows: readonly EmbeddingRow[]): string {
   return writeJsonl(rows, EMBEDDING_ROW_KEYS);
 }
 
+/** Lê e valida (Zod) um derivado de embeddings já gravado — testes e load a jusante. */
+export function readEmbeddingRowsFile(file: string): EmbeddingRow[] {
+  return readJsonl(readFileSync(file, "utf8"), embeddingRowSchema);
+}
+
 /** Caminho default do derivado (plano §3.4): `data/derived/embeddings-{revision}.jsonl`. */
 export function defaultOutFile(dataDir: string, revision: string): string {
   return path.join(dataDir, "derived", `embeddings-${revision}.jsonl`);
@@ -229,7 +234,8 @@ export interface RunEmbedBatchOptions {
 }
 
 export interface RunEmbedBatchResult {
-  rows: EmbeddingRow[];
+  /** Linhas gravadas. Os vetores NÃO ficam em memória — leia do `outFile` (`readEmbeddingRowsFile`). */
+  rowCount: number;
   embeddingModel: string;
   outFile: string;
 }
@@ -239,6 +245,14 @@ export interface RunEmbedBatchResult {
  * `verse_texts` → embed em lotes → grava o derivado. Explode cedo em
  * qualquer divergência de contrato (revisão, shape de resposta, contagem de
  * vetores por lote).
+ *
+ * ## Memória e atomicidade
+ * O corpus real (93k linhas × 1024 floats) NÃO cabe confortavelmente no heap
+ * como string única (~1,9GB serializados — acima do limite de string do V8;
+ * causa raiz de um OOM real em produção). A gravação é em STREAMING por lote
+ * num `<outFile>.tmp`, com `rename` atômico no fim: falha no meio nunca deixa
+ * o caminho final com estado parcial, e os bytes são idênticos aos da
+ * serialização única (cada chunk termina em LF — mesmo contrato do writer N4).
  */
 export async function runEmbedBatch(options: RunEmbedBatchOptions): Promise<RunEmbedBatchResult> {
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
@@ -252,43 +266,55 @@ export async function runEmbedBatch(options: RunEmbedBatchOptions): Promise<RunE
   const outFile = options.outFile ?? defaultOutFile(options.dataDir, health.revision);
 
   const verseTexts = readAllVerseTexts(options.canonicalDir);
-  const rows: EmbeddingRow[] = [];
 
-  for (let start = 0; start < verseTexts.length; start += batchSize) {
-    const batch = verseTexts.slice(start, start + batchSize);
-    const response = await options.client.embed(batch.map((entry) => entry.text));
-    if (response.vectors.length !== batch.length) {
-      throw new Error(
-        `embed: sidecar devolveu ${response.vectors.length} vetores para um lote de ${batch.length} textos ` +
-          `(offset ${start}) — resposta inconsistente, abortando`,
-      );
-    }
-    if (response.model !== health.model || response.revision !== health.revision) {
-      throw new Error(
-        `embed: resposta de /embed (${response.model}@${response.revision}) divergiu de /health ` +
-          `(${health.model}@${health.revision}) a meio da execução — build do sidecar mudou durante o batch`,
-      );
-    }
-    for (let index = 0; index < batch.length; index++) {
-      const verseText = batch[index];
-      const vector = response.vectors[index];
-      if (verseText === undefined || vector === undefined) {
-        throw new Error("embed: índice fora de alcance ao parear texto e vetor — bug de batching");
-      }
-      rows.push({
-        canonicalId: verseText.canonicalId,
-        translation: verseText.translation,
-        embedding: vector,
-        embeddingModel,
-      });
-    }
-  }
-
-  const content = writeEmbeddingRows(rows);
   mkdirSync(path.dirname(outFile), { recursive: true });
-  writeFileSync(outFile, content);
+  const tmpFile = `${outFile}.tmp`;
+  const fd = openSync(tmpFile, "w");
+  let rowCount = 0;
+  try {
+    for (let start = 0; start < verseTexts.length; start += batchSize) {
+      const batch = verseTexts.slice(start, start + batchSize);
+      const response = await options.client.embed(batch.map((entry) => entry.text));
+      if (response.vectors.length !== batch.length) {
+        throw new Error(
+          `embed: sidecar devolveu ${response.vectors.length} vetores para um lote de ${batch.length} textos ` +
+            `(offset ${start}) — resposta inconsistente, abortando`,
+        );
+      }
+      if (response.model !== health.model || response.revision !== health.revision) {
+        throw new Error(
+          `embed: resposta de /embed (${response.model}@${response.revision}) divergiu de /health ` +
+            `(${health.model}@${health.revision}) a meio da execução — build do sidecar mudou durante o batch`,
+        );
+      }
+      const batchRows: EmbeddingRow[] = [];
+      for (let index = 0; index < batch.length; index++) {
+        const verseText = batch[index];
+        const vector = response.vectors[index];
+        if (verseText === undefined || vector === undefined) {
+          throw new Error("embed: índice fora de alcance ao parear texto e vetor — bug de batching");
+        }
+        batchRows.push({
+          canonicalId: verseText.canonicalId,
+          translation: verseText.translation,
+          embedding: vector,
+          embeddingModel,
+        });
+      }
+      // Chunk termina em LF (contrato do writeJsonl) → concatenação de chunks
+      // é byte-idêntica à serialização única do conjunto completo.
+      writeSync(fd, writeEmbeddingRows(batchRows));
+      rowCount += batchRows.length;
+    }
+  } catch (error) {
+    closeSync(fd);
+    rmSync(tmpFile, { force: true });
+    throw error;
+  }
+  closeSync(fd);
+  renameSync(tmpFile, outFile);
 
-  return { rows, embeddingModel, outFile };
+  return { rowCount, embeddingModel, outFile };
 }
 
 // --- CLI ----------------------------------------------------------------------
@@ -320,7 +346,7 @@ async function main(): Promise<void> {
 
   // eslint-disable-next-line no-console -- CLI: saída de progresso é o propósito
   console.log(
-    `embed: ${result.rows.length} vetores gravados em ${result.outFile} (embeddingModel=${result.embeddingModel})`,
+    `embed: ${result.rowCount} vetores gravados em ${result.outFile} (embeddingModel=${result.embeddingModel})`,
   );
 }
 
