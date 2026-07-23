@@ -24,6 +24,7 @@ import {
   strongsEntrySchema,
   verseTextSchema,
 } from "@bereia/core";
+import { readFileSync } from "node:fs";
 import type { CanonicalVerse, Edge, OriginalWord, StrongsEntry, VerseText } from "@bereia/core";
 import type { ZodRawShape, ZodType } from "zod";
 import { compareOrdinal } from "./order.js";
@@ -103,6 +104,44 @@ export function readJsonl<T>(content: string, schema: ZodType<T>): T[] {
     }
     return schema.parse(parsed);
   });
+}
+
+/**
+ * Lê um ARQUIVO JSONL validando cada linha contra `schema` — mesma semântica
+ * de `readJsonl`, mas materializando UMA linha por vez a partir do Buffer
+ * (fora do heap do V8). Obrigatório para derivados grandes: o arquivo de
+ * embeddings real tem ~1,9GB, acima do limite de string única do V8 (~536MB)
+ * — causa raiz de um OOM real; ver `load/embed.ts` (gravação em streaming).
+ */
+export function readJsonlFile<T>(filePath: string, schema: ZodType<T>): T[] {
+  const buf = readFileSync(filePath);
+  if (buf.length === 0) return [];
+  if (buf[buf.length - 1] !== 0x0a) {
+    throw new Error(`readJsonlFile: ${filePath} não termina com LF (formato JSONL inválido)`);
+  }
+  const rows: T[] = [];
+  let start = 0;
+  let lineNo = 0;
+  while (start < buf.length) {
+    const nl = buf.indexOf(0x0a, start);
+    const end = nl === -1 ? buf.length : nl;
+    lineNo++;
+    const line = buf.toString("utf8", start, end);
+    if (line.length === 0) {
+      throw new Error(`readJsonlFile: linha ${lineNo} vazia (${filePath})`);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line) as unknown;
+    } catch (error) {
+      throw new Error(
+        `readJsonlFile: linha ${lineNo} não é JSON válido (${filePath}): ${(error as Error).message}`,
+      );
+    }
+    rows.push(schema.parse(parsed));
+    start = end + 1;
+  }
+  return rows;
 }
 
 // --- Writers/readers concretos por tabela (plano §3.3, layout OQ-1) -------

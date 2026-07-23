@@ -50,7 +50,7 @@ import type { CanonicalVerse, Edge, OriginalWord, StrongsEntry, VerseText } from
 import {
   readCanonicalVerses,
   readEdges,
-  readJsonl,
+  readJsonlFile,
   readOriginalWords,
   readStrongsEntries,
   readVerseTexts,
@@ -209,7 +209,9 @@ export function loadEmbeddings(
     return null;
   }
 
-  const rows = readJsonl(readFileSync(filePath, "utf8"), embeddingRowSchema);
+  // Linha a linha via Buffer — o derivado real (~1,9GB) estoura o limite de
+  // string única do V8 se lido com readFileSync utf8 (ver readJsonlFile).
+  const rows = readJsonlFile(filePath, embeddingRowSchema);
 
   const badModel = rows.filter((row) => row.embeddingModel !== EXPECTED_EMBEDDING_MODEL_STAMP);
   if (badModel.length > 0) {

@@ -33,7 +33,7 @@ import { z } from "zod";
 import { canonicalIdSchema } from "@bereia/core";
 import type { VerseText } from "@bereia/core";
 import { compareVerseText, sortDeterministic } from "./order.js";
-import { readJsonl, readVerseTexts, writeJsonl } from "./jsonl.js";
+import { readJsonlFile, readVerseTexts, writeJsonl } from "./jsonl.js";
 
 // --- Trava de revisão (ADR-005) --------------------------------------------
 
@@ -210,7 +210,7 @@ export function writeEmbeddingRows(rows: readonly EmbeddingRow[]): string {
 
 /** Lê e valida (Zod) um derivado de embeddings já gravado — testes e load a jusante. */
 export function readEmbeddingRowsFile(file: string): EmbeddingRow[] {
-  return readJsonl(readFileSync(file, "utf8"), embeddingRowSchema);
+  return readJsonlFile(file, embeddingRowSchema);
 }
 
 /** Caminho default do derivado (plano §3.4): `data/derived/embeddings-{revision}.jsonl`. */
