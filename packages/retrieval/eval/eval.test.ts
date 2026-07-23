@@ -90,9 +90,11 @@ describe("runEval — critério de cobertura (fake service, sem DB)", () => {
         criterion: "coverage",
         missing: [],
         ranking: ["EXO_1_1", "GEN_1_2", "GEN_1_1"],
+        recallAtLimit: 1,
+        firstExpectedRank: 2, // GEN_1_2 (1º expectedId a aparecer) está na posição 2 do ranking completo
       },
     ]);
-    expect(report).toMatchObject({ total: 1, passed: 1, failed: 0 });
+    expect(report).toMatchObject({ total: 1, passed: 1, failed: 0, meanRecallAtLimit: 1, casesWithExpectedFound: 1 });
   });
 
   it("cobertura: falha e lista os expectedIds ausentes em `missing`", async () => {
@@ -113,8 +115,10 @@ describe("runEval — critério de cobertura (fake service, sem DB)", () => {
       criterion: "coverage",
       missing: ["GEN_1_2"],
       ranking: ["EXO_1_1", "GEN_1_1"],
+      recallAtLimit: 0.5, // só GEN_1_1 dos 2 expectedIds está no ranking (truncado em limit=3)
+      firstExpectedRank: 2, // GEN_1_1 é o 1º expectedId a aparecer, na posição 2 do ranking completo
     });
-    expect(report).toMatchObject({ total: 1, passed: 0, failed: 1 });
+    expect(report).toMatchObject({ total: 1, passed: 0, failed: 1, meanRecallAtLimit: 0.5, casesWithExpectedFound: 1 });
   });
 
   it("cobertura: `ranking`/critério de missing respeitam `limit` mesmo se o service devolver mais linhas", async () => {
@@ -136,7 +140,61 @@ describe("runEval — critério de cobertura (fake service, sem DB)", () => {
       criterion: "coverage",
       missing: ["GEN_1_1"],
       ranking: ["EXO_1_1"],
+      // `recallAtLimit` mede só o ranking TRUNCADO (limit=1): GEN_1_1 caiu fora, recall 0.
+      recallAtLimit: 0,
+      // `firstExpectedRank` mede o ranking COMPLETO devolvido pelo service (2 itens,
+      // ignorando o `limit` do caso) — GEN_1_1 aparece na posição 2, mesmo truncado do report.
+      firstExpectedRank: 2,
     });
+  });
+
+  it("recallAtLimit e firstExpectedRank distinguem cobertura truncada de posição no ranking completo", async () => {
+    const evalCase = makeCase({
+      id: "caso-metricas-parciais",
+      query: "mock: busca métricas",
+      expectedIds: ["GEN_1_1", "GEN_1_2", "EXO_1_1"],
+      note: "placeholder estrutural — prova recallAtLimit/firstExpectedRank isoladamente",
+      limit: 2,
+    });
+    // Service "mal-comportado" (ignora `limit`): devolve 4 itens, só 2 expectedIds no topo truncado.
+    const service = makeFakeService(() => [
+      themeResult("JDG_1_1"),
+      themeResult("GEN_1_2"),
+      themeResult("GEN_1_1"),
+      themeResult("EXO_1_1"),
+    ]);
+
+    const report = await runEval(service, [evalCase]);
+
+    expect(report.cases[0]).toMatchObject({
+      ranking: ["JDG_1_1", "GEN_1_2"],
+      missing: ["GEN_1_1", "EXO_1_1"],
+      // Só GEN_1_2 dos 3 expectedIds está no topo truncado (limit=2) → 1/3.
+      recallAtLimit: 1 / 3,
+      // GEN_1_2 (1º expectedId) aparece na posição 2 do ranking COMPLETO (4 itens) — não `null`
+      // mesmo com `missing` não-vazio, e não capado pelo `limit=2` do caso.
+      firstExpectedRank: 2,
+    });
+    expect(report).toMatchObject({ meanRecallAtLimit: 1 / 3, casesWithExpectedFound: 1 });
+  });
+
+  it("firstExpectedRank é `null` quando nenhum expectedId aparece no ranking completo", async () => {
+    const evalCase = makeCase({
+      id: "caso-nenhum-encontrado",
+      query: "mock: busca ausente",
+      expectedIds: ["GEN_1_1"],
+      note: "placeholder estrutural — prova firstExpectedRank null",
+      limit: 5,
+    });
+    const service = makeFakeService(() => [themeResult("EXO_1_1"), themeResult("JDG_1_1")]);
+
+    const report = await runEval(service, [evalCase]);
+
+    expect(report.cases[0]).toMatchObject({
+      recallAtLimit: 0,
+      firstExpectedRank: null,
+    });
+    expect(report).toMatchObject({ meanRecallAtLimit: 0, casesWithExpectedFound: 0 });
   });
 });
 
@@ -160,6 +218,8 @@ describe("runEval — critério strict (fake service, sem DB)", () => {
       criterion: "strict",
       missing: [],
       ranking: ["GEN_1_1", "GEN_1_2", "EXO_1_1"],
+      recallAtLimit: 1,
+      firstExpectedRank: 1,
     });
   });
 
@@ -182,6 +242,8 @@ describe("runEval — critério strict (fake service, sem DB)", () => {
       criterion: "strict",
       missing: [],
       ranking: ["GEN_1_2", "GEN_1_1"],
+      recallAtLimit: 1,
+      firstExpectedRank: 1,
     });
   });
 
@@ -204,6 +266,8 @@ describe("runEval — critério strict (fake service, sem DB)", () => {
       criterion: "strict",
       missing: ["GEN_1_2"],
       ranking: ["GEN_1_1"],
+      recallAtLimit: 0.5,
+      firstExpectedRank: 1,
     });
   });
 });
@@ -494,7 +558,7 @@ describe.skipIf(!databaseUp)("eval.test — harness de ponta a ponta contra o mo
     expect(second).toEqual(first);
   });
 
-  it("snapshot estável: o report do mock pina o formato (id/passed/criterion/missing/ranking + agregado)", async () => {
+  it("snapshot estável: o report do mock pina o formato (id/passed/criterion/missing/ranking/recallAtLimit/firstExpectedRank + agregado)", async () => {
     const report = await runEval(service, mockCases);
 
     expect(report).toMatchInlineSnapshot(`
@@ -502,6 +566,7 @@ describe.skipIf(!databaseUp)("eval.test — harness de ponta a ponta contra o mo
         "cases": [
           {
             "criterion": "coverage",
+            "firstExpectedRank": 1,
             "id": "mock-tema-a",
             "missing": [],
             "passed": true,
@@ -515,9 +580,11 @@ describe.skipIf(!databaseUp)("eval.test — harness de ponta a ponta contra o mo
               "LEV_1_1",
               "NUM_1_1",
             ],
+            "recallAtLimit": 1,
           },
           {
             "criterion": "strict",
+            "firstExpectedRank": 1,
             "id": "mock-tema-b",
             "missing": [],
             "passed": true,
@@ -525,9 +592,11 @@ describe.skipIf(!databaseUp)("eval.test — harness de ponta a ponta contra o mo
               "EXO_1_1",
               "JDG_1_1",
             ],
+            "recallAtLimit": 1,
           },
           {
             "criterion": "coverage",
+            "firstExpectedRank": 1,
             "id": "mock-tema-c",
             "missing": [],
             "passed": true,
@@ -541,9 +610,11 @@ describe.skipIf(!databaseUp)("eval.test — harness de ponta a ponta contra o mo
               "JDG_1_1",
               "JOS_1_1",
             ],
+            "recallAtLimit": 1,
           },
           {
             "criterion": "coverage",
+            "firstExpectedRank": 1,
             "id": "mock-tema-d",
             "missing": [],
             "passed": true,
@@ -552,9 +623,12 @@ describe.skipIf(!databaseUp)("eval.test — harness de ponta a ponta contra o mo
               "DEU_1_1",
               "EXO_1_1",
             ],
+            "recallAtLimit": 1,
           },
         ],
+        "casesWithExpectedFound": 4,
         "failed": 0,
+        "meanRecallAtLimit": 1,
         "passed": 4,
         "total": 4,
       }
