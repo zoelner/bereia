@@ -75,3 +75,9 @@ silêncio.
 3. Rodar o harness (N8) contra o Postgres carregado (`DATABASE_URL` setado) e
    confirmar que o caso passa o critério de cobertura/`strict` antes de
    commitar.
+
+## Nota de configuração (aviso do verifier N8)
+
+Um caso com `expectedIds.length > limit` não explode — reprova naturalmente por cobertura
+(`missing` preenchido). Ao escrever casos reais, garanta `limit >= expectedIds.length`
+(o default de `limit` é 10).
