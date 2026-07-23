@@ -83,6 +83,28 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.1)(tsx@4.23.1)
 
+  packages/retrieval:
+    dependencies:
+      '@bereia/core':
+        specifier: workspace:*
+        version: link:../core
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
+      zod:
+        specifier: ^3.25.67
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(tsx@4.23.1)
+
 packages:
 
   '@esbuild/aix-ppc64@0.28.1':
