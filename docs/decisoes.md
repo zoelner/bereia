@@ -52,3 +52,16 @@ Testes só mudam quando um **requisito** muda; refatorar implementação não po
 ## ADR-009 — Dado canônico em repo próprio (bereia-data)
 
 O JSONL canônico sai do repo de código e passa a viver em **`zoelner/bereia-data`** (público), com o layout OQ-1 sob `canonical/` na raiz e README/NOTICE/LICENSE próprios (CC BY 4.0 para os derivados de fontes CC BY; domínio público preservado). Motivos: (1) o dado é 100% derivável enquanto não há curadoria — 136MB no repo de código só pesariam o clone; (2) a cisão já estava prevista (§2: `DATA_DIR` por env) e antecipa o destino da curadoria da Fase 5, que escreverá na fonte de verdade **sem migração futura**; (3) removê-lo depois do merge exigiria reescrita de histórico na `main` — a assimetria de custo decidiu o momento. O que NÃO muda: o dado continua **versionado em Git** (o `git diff` auditável entre builds é peça do gate de determinismo — só muda o repo onde acontece) e o Postgres continua projeção descartável. Ligação código↔dado: `CANONICAL_DIR`/`OUT_DIR` por env (default local `DATA_DIR/canonical`, gitignorado); sincronia auditada regenerando com `OUT_DIR` no clone do bereia-data e exigindo `git diff` vazio — o `BUILD_MANIFEST.json` (contagens + sha256 das fontes, sem timestamp) é a âncora. Atenção operacional: `build:canonical` **apaga o OUT_DIR inteiro**; por isso o alvo é o subdiretório `canonical/`, nunca a raiz do clone.
+
+## ADR-010 — Port de exegese e localização do schema Drizzle (Fase 2)
+
+Duas decisões tomadas na aprovação do plano da Fase 2 (2026-07-23). **(1) `getExegesis` é operação
+NOVA** do `RetrievalService`: devolve verso + textos + `originalWords` (join com `strongs`, preservando
+`strongId:null` dos estendidos) + `interpretations` como array cru — a separação de interpretações
+divergentes é garantida PELO TIPO (fundir é impossível sem violar o contrato; anti-ambiguidade da §1).
+`getVerse` permanece intocado (âncora ADR-008 preservada; operação simples continua barata). O shape
+alinha com o que o stub do mcp-server já declara em `verse_exegesis` — a Fase 3 liga sem retrabalho.
+**(2) O schema Drizzle PERMANECE em `packages/core`** (desfecho da reavaliação prevista no ADR-007):
+é contrato declarativo sem I/O, consumido por dois adapters (ingestion/load e retrieval); movê-lo para
+um deles criaria dependência adapter→adapter. `PgRetrieval` nasce em `packages/retrieval` (adapter
+próprio, fora do core), com thin client de embedding de query pinado pela mesma trava ADR-005.
