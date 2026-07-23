@@ -1,0 +1,4 @@
+{"id":"mock-tema-a","query":"mock: tema sintético A","limit":10,"strict":false,"expectedIds":["GEN_1_1","GEN_1_2"],"note":"Placeholder estrutural sem significado teológico — verifica cobertura básica (expectedIds ⊆ topN) do harness N8."}
+{"id":"mock-tema-b","query":"mock: tema sintético B","translation":"KJV","limit":5,"strict":true,"expectedIds":["EXO_1_1"],"note":"Placeholder estrutural sem significado teológico — verifica critério strict (exatidão de prefixo) com um único expectedId."}
+{"id":"mock-tema-c","query":"mock: tema sintético C","limit":20,"strict":false,"expectedIds":["LEV_1_1","NUM_1_1","DEU_1_1"],"note":"Placeholder estrutural sem significado teológico — verifica cobertura com múltiplos expectedIds em N maior que o default."}
+{"id":"mock-tema-d","query":"mock: tema sintético D","limit":3,"strict":false,"expectedIds":["JOS_1_1"],"note":"Placeholder estrutural sem significado teológico — verifica caso com limit pequeno explícito."}
