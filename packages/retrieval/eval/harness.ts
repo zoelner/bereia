@@ -81,6 +81,23 @@ export const evalCaseReportSchema = z.object({
   missing: z.array(canonicalIdSchema),
   /** Ranking efetivo (`canonicalId` por posição), já truncado em `limit`. */
   ranking: z.array(canonicalIdSchema),
+  /**
+   * Métrica OBSERVACIONAL (não afeta `passed`): recall dentro do topo já
+   * truncado em `limit` — `|expectedIds ∩ ranking| / |expectedIds|`, em
+   * `[0, 1]`. Útil para comparar tuning quantitativamente (ex.: fusão
+   * on/off) sem depender do critério binário de aprovação.
+   */
+  recallAtLimit: z.number().min(0).max(1),
+  /**
+   * Métrica OBSERVACIONAL (não afeta `passed`): posição 1-based do PRIMEIRO
+   * `expectedId` encontrado no ranking COMPLETO devolvido pelo serviço para
+   * o caso — deliberadamente NÃO truncado em `limit` (ao contrário de
+   * `ranking`/`recallAtLimit`), para servir de métrica de progresso mesmo
+   * quando o `expectedId` cai fora do topo hoje (ex.: rank 40 → rank 12 é
+   * progresso visível, mesmo que ambos falhem o gate). `null` quando nenhum
+   * `expectedId` aparece em nenhuma posição do ranking completo.
+   */
+  firstExpectedRank: z.number().int().positive().nullable(),
 });
 export type EvalCaseReport = z.infer<typeof evalCaseReportSchema>;
 
@@ -89,6 +106,10 @@ export const evalReportSchema = z.object({
   total: z.number().int().nonnegative(),
   passed: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),
+  /** Média de `recallAtLimit` entre os casos — `0` quando `cases` está vazio (evita `NaN`). Observacional. */
+  meanRecallAtLimit: z.number().min(0).max(1),
+  /** Quantos casos têm ao menos 1 `expectedId` em alguma posição do ranking completo (`firstExpectedRank !== null`). Observacional. */
+  casesWithExpectedFound: z.number().int().nonnegative(),
 });
 export type EvalReport = z.infer<typeof evalReportSchema>;
 
@@ -125,16 +146,27 @@ async function evaluateCase(service: RetrievalService, evalCase: EvalCase, user:
       ? { translation: evalCase.translation, limit: evalCase.limit }
       : { limit: evalCase.limit };
   const results = await service.searchByTheme(evalCase.query, user, searchOptions);
+  // Ranking COMPLETO devolvido pelo serviço, sem a truncagem defensiva abaixo
+  // — usado só por `firstExpectedRank` (métrica de progresso que não pode
+  // ficar artificialmente capada pelo `limit` do caso, ver docstring do schema).
+  const fullRanking = results.map((result) => result.canonicalId);
   // Truncagem defensiva em `limit`: `searchByTheme` já aplica `LIMIT` na SQL,
   // mas o harness não confia cegamente num `RetrievalService` arbitrário
   // (fakes de teste inclusive) — o critério é sempre sobre o topN declarado
   // no caso, nunca sobre o array cru devolvido.
-  const ranking = results.slice(0, evalCase.limit).map((result) => result.canonicalId);
+  const ranking = fullRanking.slice(0, evalCase.limit);
   const missing = evalCase.expectedIds.filter((id) => !ranking.includes(id));
 
   const passed = evalCase.strict
     ? missing.length === 0 && arrayStartsWith(ranking, evalCase.expectedIds)
     : missing.length === 0;
+
+  const foundInLimitCount = evalCase.expectedIds.filter((id) => ranking.includes(id)).length;
+  const recallAtLimit = foundInLimitCount / evalCase.expectedIds.length;
+
+  const expectedIdSet = new Set(evalCase.expectedIds);
+  const firstExpectedIndex = fullRanking.findIndex((id) => expectedIdSet.has(id));
+  const firstExpectedRank = firstExpectedIndex === -1 ? null : firstExpectedIndex + 1;
 
   return evalCaseReportSchema.parse({
     id: evalCase.id,
@@ -142,6 +174,8 @@ async function evaluateCase(service: RetrievalService, evalCase: EvalCase, user:
     criterion: evalCase.strict ? "strict" : "coverage",
     missing,
     ranking,
+    recallAtLimit,
+    firstExpectedRank,
   });
 }
 
@@ -167,10 +201,20 @@ export async function runEval(
   }
 
   const passed = caseReports.filter((report) => report.passed).length;
+  // `0` quando `caseReports` está vazio — evita `0/0 = NaN` sem introduzir
+  // não-determinismo (é aritmética pura sobre os próprios reports).
+  const meanRecallAtLimit =
+    caseReports.length === 0
+      ? 0
+      : caseReports.reduce((sum, report) => sum + report.recallAtLimit, 0) / caseReports.length;
+  const casesWithExpectedFound = caseReports.filter((report) => report.firstExpectedRank !== null).length;
+
   return evalReportSchema.parse({
     cases: caseReports,
     total: caseReports.length,
     passed,
     failed: caseReports.length - passed,
+    meanRecallAtLimit,
+    casesWithExpectedFound,
   });
 }
