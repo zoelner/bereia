@@ -64,6 +64,33 @@ const embedResponseSchema = z.object({
 });
 export type EmbedResponse = z.infer<typeof embedResponseSchema>;
 
+/** Dimensão do BGE-M3 pinado — invariante do espaço vetorial compartilhado (schema `vector(1024)`). */
+export const EXPECTED_EMBEDDING_DIMENSIONS = 1024;
+
+// Trava da fronteira HTTP real: o `EmbedderClient` injetável permanece
+// dimensão-agnóstico (fixtures unitárias), mas nenhum vetor fora de 1024 pode
+// entrar em produção — um sidecar com build de dimensão errada explode AQUI,
+// não só no load do Postgres.
+const httpEmbedResponseSchema = embedResponseSchema.superRefine((res, ctx) => {
+  if (res.dimensions !== EXPECTED_EMBEDDING_DIMENSIONS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        `embed: sidecar reporta dimensions=${res.dimensions}, esperado ` +
+        `${EXPECTED_EMBEDDING_DIMENSIONS} (BGE-M3 pinado) — build incompatível com o schema vector(1024)`,
+    });
+  }
+  const bad = res.vectors.findIndex((v) => v.length !== res.dimensions);
+  if (bad !== -1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        `embed: vetor no índice ${bad} tem ${res.vectors[bad]?.length} dimensões, ` +
+        `divergindo do dimensions=${res.dimensions} reportado pelo sidecar`,
+    });
+  }
+});
+
 /**
  * Confere `health` contra o modelo/revisão pinados (ADR-005). Explode com
  * mensagem clara em PT se divergir — é a trava que impede gravar vetores de
@@ -123,7 +150,7 @@ export function createHttpEmbedderClient(embedderUrl: string): EmbedderClient {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ texts }),
       });
-      return embedResponseSchema.parse(body);
+      return httpEmbedResponseSchema.parse(body);
     },
   };
 }
