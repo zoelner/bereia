@@ -1,0 +1,290 @@
+/**
+ * Fusão RRF (Reciprocal Rank Fusion) entre a busca temática densa e a
+ * expansão do grafo de cross-references (Estágio 2 do plano de enriquecimento
+ * do retrieval, `docs/plano-fase2-retrieval.md` / plano da tarefa). OPT-IN —
+ * `searchByTheme` (busca densa pura) continua intocada; este módulo é
+ * chamado explicitamente por quem já decidiu fundir (ver `pg-retrieval.ts`,
+ * `fuseCrossReferences`).
+ *
+ * ## Motivação (contexto real que orienta este nó)
+ * A query curta/figurativa "dar a outra face" traz Mt 5:39 (o alvo canônico)
+ * só no rank 24 da busca puramente densa — o vetor da query é difuso demais
+ * para discriminar. Mas o grafo de cross-references já liga Mt 5:39 ↔ Lc
+ * 6:29, e Lc 6:29 entra facilmente no top-N denso. Fundir o ranking denso com
+ * uma expansão de 1 hop do grafo, a partir das sementes mais bem ranqueadas,
+ * recupera o alvo SEM re-indexar nem mudar o sidecar de embedding — o verso
+ * já estava perto o bastante para ser semente OU já estava no top-K denso
+ * (ainda que mal ranqueado); o grafo só reforça essa proximidade estrutural.
+ *
+ * ## O algoritmo, passo a passo
+ * 1. Embeda a `query` UMA VEZ (`embedder.embedQuery`) — o mesmo vetor serve
+ *    para o ranking denso e para pontuar os candidatos do grafo.
+ * 2. Ranking dense top-K via `scoreVersesByVector` (`FUSION_DENSE_K` linhas,
+ *    MESMO hard filter/tie-break de `searchByTheme`).
+ * 3. Sementes = as `FUSION_SEED_N` primeiras linhas do ranking denso,
+ *    deduplicadas por `canonicalId` (mesma referência bíblica com traduções
+ *    diferentes é UMA semente só — cross-references são por verso, não por
+ *    tradução) — cada semente carrega o MENOR rank denso (1-indexado) em que
+ *    apareceu dentro do top-N.
+ * 4. Para cada semente, `getCrossReferences(sql, seed, {maxHops:
+ *    FUSION_MAX_HOPS})` — sob o MESMO hard filter da recursão (um alvo não
+ *    autorizado nunca vira candidato; nunca vaza pela fusão). Com
+ *    `FUSION_MAX_HOPS=1`, toda edge devolvida tem `sourceId === seed`, então
+ *    o "hop" de cada alvo é sempre 1 (documentado explicitamente aqui, não
+ *    inferido do CTE) — mantém o código honesto sobre a constante pinada, não
+ *    um acidente de implementação.
+ * 5. Candidatos do grafo (`canonicalId`s alcançados) recebem `(rank_da_semente,
+ *    hop)` — o MENOR par, por ordenação `(rank_da_semente, hop)`, quando um
+ *    mesmo alvo é alcançável por mais de uma semente.
+ * 6. Cada candidato do grafo é expandido para linhas `(canonicalId,
+ *    translation)`: se o candidato JÁ tem linha(s) no ranking denso (top-K),
+ *    reaproveita a distância/texto já pontuados (SEM 2ª consulta) — ele
+ *    recebe AMBOS os termos do RRF (denso + grafo), o que é exatamente o
+ *    mecanismo de promoção (um verso mal ranqueado no denso, mas confirmado
+ *    pelo grafo, sobe). Se o candidato NÃO está no top-K denso, uma 2ª
+ *    consulta (`scoreVersesByIds`) pontua o `<=>` REAL dele (mesmo hard
+ *    filter) — nunca inventa distância.
+ * 7. Todas as linhas do grafo (`FORA` ou reaproveitadas do denso) são
+ *    ordenadas por UMA chave total `(rank_da_semente, hop, canonicalId,
+ *    translation)` — essa posição (1-indexada) é `rank_grafo`.
+ * 8. RRF: `score = 1/(FUSION_RRF_K + rank_denso) + FUSION_GRAPH_WEIGHT ·
+ *    1/(FUSION_RRF_K + rank_grafo)`, com o termo ausente = 0 quando a linha só
+ *    aparece numa das duas listas. A soma é construída em ORDEM FIXA (todas
+ *    as linhas densas inseridas primeiro num mapa por chave, depois as linhas
+ *    do grafo mescladas/inseridas) — reprodutibilidade bit-a-bit, já que a
+ *    soma de ponto flutuante IEEE754 é comutativa mas a ORDEM DE CONSTRUÇÃO
+ *    do mapa (não a soma em si) é o que precisa ser determinística aqui.
+ * 9. Ordena o resultado combinado por `score` desc; tie-break FINAL total
+ *    `(canonicalId, translation)` — nunca há empate sem desempate. Corta em
+ *    `limit` (default `DEFAULT_LIMIT`, mesmo default de `searchByTheme`).
+ *
+ * ## Constantes pinadas (mudar qualquer uma muda o RANKING — gated por eval,
+ * nunca ajustar "a olho")
+ * - `FUSION_RRF_K=60`: constante de suavização do RRF clássico (Cormack et
+ *   al., valor usual da literatura) — quanto maior, mais achata a diferença
+ *   entre ranks vizinhos.
+ * - `FUSION_GRAPH_WEIGHT=0.5`: o grafo é um SINAL DE REFORÇO, não uma fonte
+ *   primária — pesa menos que 1 para nunca dominar sozinho o ranking denso.
+ * - `FUSION_DENSE_K=50`: tamanho do "pool" denso considerado na fusão (maior
+ *   que o `limit` típico de exibição, para não descartar cedo demais um
+ *   candidato que o grafo ainda pode promover).
+ * - `FUSION_SEED_N=10`: só os N melhores do denso viram ponto de partida da
+ *   expansão do grafo — sementes ruins (mal ranqueadas) trariam ruído, não
+ *   sinal.
+ * - `FUSION_MAX_HOPS=1`: expansão rasa (vizinho direto) — cross-references de
+ *   2+ hops a partir de uma semente já mediana tendem a se afastar
+ *   tematicamente (backlog, contingente a eval).
+ */
+
+import type postgres from "postgres";
+import type { CanonicalId, ThemeSearchOptions, ThemeSearchResult, User } from "@bereia/core";
+import { getCrossReferences } from "./cross-references.js";
+import type { QueryEmbedder } from "./embedder.js";
+import { DEFAULT_LIMIT, scoreVersesByIds, scoreVersesByVector } from "./search-theme.js";
+
+// --- constantes pinadas da fusão (ver docstring do módulo) ------------------
+
+/** Constante de suavização do RRF clássico. Pinada — mudar altera o ranking. */
+export const FUSION_RRF_K = 60;
+/** Peso do sinal de grafo em relação ao denso (<1: reforço, nunca domina). Pinado. */
+export const FUSION_GRAPH_WEIGHT = 0.5;
+/** Tamanho do pool denso considerado na fusão. Pinado. */
+export const FUSION_DENSE_K = 50;
+/** Quantas linhas do topo denso viram semente da expansão do grafo. Pinado. */
+export const FUSION_SEED_N = 10;
+/** Profundidade da expansão do grafo a partir de cada semente. Pinado (teto do módulo é 3; aqui sempre 1). */
+export const FUSION_MAX_HOPS = 1;
+
+export interface SearchByThemeFusedOptions extends ThemeSearchOptions {
+  /** Usuário do hard filter (`accessLevels`) — obrigatório, sem hardcode (espelha `searchByTheme`). */
+  user: User;
+}
+
+function formatVectorLiteral(values: readonly number[]): string {
+  return `[${values.join(",")}]`;
+}
+
+function resolveLimit(limit: number | undefined): number {
+  const value = limit ?? DEFAULT_LIMIT;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`searchByThemeFused: limit deve ser um inteiro ≥ 1 (recebido ${JSON.stringify(limit)})`);
+  }
+  return value;
+}
+
+function rowKey(canonicalId: string, translation: string): string {
+  return `${canonicalId}::${translation}`;
+}
+
+/** Termo do RRF — rank ausente (`undefined`) vira termo 0, nunca `NaN`/erro. */
+function rrfTerm(rank: number | undefined): number {
+  return rank === undefined ? 0 : 1 / (FUSION_RRF_K + rank);
+}
+
+interface FusedRow {
+  canonicalId: CanonicalId;
+  translation: string;
+  text: string;
+  distance: number;
+  rankDenso: number | undefined;
+  rankGrafo: number | undefined;
+}
+
+interface GraphCandidate {
+  /** Menor rank (1-indexado) dentre as sementes que alcançam este alvo. */
+  seedRank: number;
+  /** Sempre 1 com `FUSION_MAX_HOPS=1` (ver docstring do módulo). */
+  hop: number;
+}
+
+/**
+ * Busca temática fundida (denso + grafo de cross-references) via RRF
+ * determinístico. Mesmas invariantes de entrada de `searchByTheme`: query
+ * vazia/whitespace e `accessLevels` vazio explodem ANTES de qualquer embed
+ * ou consulta.
+ */
+export async function searchByThemeFused(
+  sql: postgres.Sql,
+  embedder: QueryEmbedder,
+  query: string,
+  options: SearchByThemeFusedOptions,
+): Promise<ThemeSearchResult[]> {
+  if (query.trim().length === 0) {
+    throw new Error("searchByThemeFused: query vazia — nada para buscar (bug de chamada, não deveria acontecer)");
+  }
+  if (options.user.accessLevels.length === 0) {
+    throw new Error(
+      "searchByThemeFused: options.user.accessLevels vazio — hard filter sem nenhum nível autorizado não " +
+        "devolveria nenhum texto por definição; passe ao menos um nível (bug de chamada, não deveria acontecer)",
+    );
+  }
+  const finalLimit = resolveLimit(options.limit);
+
+  const vector = await embedder.embedQuery(query);
+  const vectorLiteral = formatVectorLiteral(vector);
+
+  // --- passo 2: ranking denso top-K -----------------------------------------
+  // `exactOptionalPropertyTypes` proíbe `translation: undefined` explícito —
+  // a chave só entra no objeto quando o chamador de fato passou uma tradução.
+  const denseRows = await scoreVersesByVector(sql, vectorLiteral, {
+    user: options.user,
+    limit: FUSION_DENSE_K,
+    ...(options.translation !== undefined ? { translation: options.translation } : {}),
+  });
+
+  // --- passo 3: sementes = top-N densos, deduplicadas por canonicalId ------
+  // `denseRows` já está em ORDEM total (tie-break de `scoreVersesByVector`),
+  // então a primeira ocorrência de cada `canonicalId` dentro do top-N já é o
+  // menor rank — não precisa de min() explícito depois.
+  const seedRankByCanonicalId = new Map<CanonicalId, number>();
+  denseRows.slice(0, FUSION_SEED_N).forEach((row, index) => {
+    const rank = index + 1;
+    if (!seedRankByCanonicalId.has(row.canonicalId)) {
+      seedRankByCanonicalId.set(row.canonicalId, rank);
+    }
+  });
+
+  // --- passos 4-5: expande o grafo a partir de cada semente, 1 hop ---------
+  // Sequencial (não Promise.all) por simplicidade de leitura — a ordem de
+  // disparo dos requests não afeta o resultado (a combinação abaixo é
+  // determinística por construção), mas mantém o código fácil de auditar.
+  const candidateByCanonicalId = new Map<CanonicalId, GraphCandidate>();
+  for (const [seedId, seedRank] of seedRankByCanonicalId) {
+    const edges = await getCrossReferences(sql, seedId, { user: options.user, maxHops: FUSION_MAX_HOPS });
+    for (const edge of edges) {
+      // Com FUSION_MAX_HOPS=1, toda edge devolvida tem sourceId===seedId — o
+      // hop do alvo é sempre 1 (ver docstring do módulo, passo 4).
+      const hop = 1;
+      const existing = candidateByCanonicalId.get(edge.targetId);
+      if (existing === undefined || seedRank < existing.seedRank || (seedRank === existing.seedRank && hop < existing.hop)) {
+        candidateByCanonicalId.set(edge.targetId, { seedRank, hop });
+      }
+    }
+  }
+
+  // --- passo 6: linhas do grafo — reaproveita o denso quando possível, ------
+  // 2ª consulta (scoreVersesByIds) só para candidatos fora do top-K denso.
+  interface GraphRow extends ThemeSearchResult {
+    seedRank: number;
+    hop: number;
+  }
+  const graphRows: GraphRow[] = [];
+  const idsNeedingScore: CanonicalId[] = [];
+  for (const canonicalId of candidateByCanonicalId.keys()) {
+    const hasDenseRows = denseRows.some((row) => row.canonicalId === canonicalId);
+    if (!hasDenseRows) idsNeedingScore.push(canonicalId);
+  }
+  const scoredOutsideDense =
+    idsNeedingScore.length > 0
+      ? await scoreVersesByIds(sql, vectorLiteral, idsNeedingScore, {
+          user: options.user,
+          ...(options.translation !== undefined ? { translation: options.translation } : {}),
+        })
+      : [];
+
+  for (const [canonicalId, candidate] of candidateByCanonicalId) {
+    const denseMatches = denseRows.filter((row) => row.canonicalId === canonicalId);
+    const outsideMatches = scoredOutsideDense.filter((row) => row.canonicalId === canonicalId);
+    for (const row of [...denseMatches, ...outsideMatches]) {
+      graphRows.push({ ...row, seedRank: candidate.seedRank, hop: candidate.hop });
+    }
+  }
+
+  // --- passo 7: ordenação TOTAL dos candidatos do grafo → rank_grafo -------
+  graphRows.sort((a, b) => {
+    if (a.seedRank !== b.seedRank) return a.seedRank - b.seedRank;
+    if (a.hop !== b.hop) return a.hop - b.hop;
+    if (a.canonicalId !== b.canonicalId) return a.canonicalId < b.canonicalId ? -1 : 1;
+    if (a.translation !== b.translation) return a.translation < b.translation ? -1 : 1;
+    return 0;
+  });
+
+  // --- passos 8-9: combina (denso primeiro, grafo depois) + RRF + tie-break ---
+  const rowsByKey = new Map<string, FusedRow>();
+  denseRows.forEach((row, index) => {
+    rowsByKey.set(rowKey(row.canonicalId, row.translation), {
+      canonicalId: row.canonicalId,
+      translation: row.translation,
+      text: row.text,
+      distance: row.distance,
+      rankDenso: index + 1,
+      rankGrafo: undefined,
+    });
+  });
+  graphRows.forEach((row, index) => {
+    const key = rowKey(row.canonicalId, row.translation);
+    const rankGrafo = index + 1;
+    const existing = rowsByKey.get(key);
+    if (existing !== undefined) {
+      existing.rankGrafo = rankGrafo;
+    } else {
+      rowsByKey.set(key, {
+        canonicalId: row.canonicalId,
+        translation: row.translation,
+        text: row.text,
+        distance: row.distance,
+        rankDenso: undefined,
+        rankGrafo,
+      });
+    }
+  });
+
+  const scored = [...rowsByKey.values()].map((row) => ({
+    ...row,
+    score: rrfTerm(row.rankDenso) + FUSION_GRAPH_WEIGHT * rrfTerm(row.rankGrafo),
+  }));
+
+  scored.sort((a, b) => {
+    if (a.score !== b.score) return b.score - a.score;
+    if (a.canonicalId !== b.canonicalId) return a.canonicalId < b.canonicalId ? -1 : 1;
+    if (a.translation !== b.translation) return a.translation < b.translation ? -1 : 1;
+    return 0;
+  });
+
+  return scored.slice(0, finalLimit).map((row) => ({
+    canonicalId: row.canonicalId,
+    translation: row.translation,
+    text: row.text,
+    distance: row.distance,
+  }));
+}

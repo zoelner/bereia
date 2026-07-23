@@ -12,6 +12,7 @@
  */
 export * from "./embedder.js";
 export * from "./search-theme.js";
+export * from "./search-theme-fused.js";
 export * from "./exegesis.js";
 export * from "./cross-references.js";
 export * from "./pg-retrieval.js";
