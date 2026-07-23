@@ -8,7 +8,8 @@
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit",
-    "build:canonical": "tsx src/load/build-canonical.ts"
+    "build:canonical": "tsx src/load/build-canonical.ts",
+    "embed:batch": "tsx src/load/embed.ts"
   },
   "dependencies": {
     "@bereia/core": "workspace:*",
