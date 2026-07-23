@@ -27,6 +27,17 @@
  * hard filter de `authorized_levels` devolve um objeto não-nulo com
  * `texts: []` — "nenhum texto autorizado" e "verso inexistente" são estados
  * distintos por construção (não há coluna de controle de acesso por verso).
+ *
+ * ## `fuseCrossReferences` — fusão RRF com o grafo, OPT-IN (Estágio 2 do
+ * plano de enriquecimento do retrieval)
+ * Flag opcional, default `false` (comportamento IDÊNTICO ao anterior a este
+ * nó — nada muda para quem não passa a opção). Quando `true`,
+ * `PgRetrieval.searchByTheme` delega a `searchByThemeFused`
+ * (`search-theme-fused.ts`) em vez de `searchByTheme` puro — funde o ranking
+ * denso com uma expansão de 1 hop do grafo de cross-references via RRF
+ * determinístico. O port `RetrievalService` fica INTOCADO (a assinatura de
+ * `searchByTheme` não muda) — a fusão é um detalhe de composição interno do
+ * adapter, nunca do contrato.
  */
 
 import type postgres from "postgres";
@@ -50,6 +61,7 @@ import {
 import { getCrossReferences } from "./cross-references.js";
 import type { QueryEmbedder } from "./embedder.js";
 import { getExegesis } from "./exegesis.js";
+import { searchByThemeFused } from "./search-theme-fused.js";
 import { searchByTheme } from "./search-theme.js";
 
 export interface PgRetrievalOptions {
@@ -57,6 +69,11 @@ export interface PgRetrievalOptions {
   sql: postgres.Sql;
   /** Cliente de embedding de query (trava de revisão ADR-005 já embutida). */
   embedder: QueryEmbedder;
+  /**
+   * OPT-IN da fusão RRF com o grafo de cross-references (ver docstring do
+   * módulo). Default `false` — comportamento idêntico ao denso puro.
+   */
+  fuseCrossReferences?: boolean;
 }
 
 // --- shape das linhas cruas de `getVerse` (mesmo contorno de exegesis.ts) --
@@ -102,14 +119,17 @@ function formatTextArrayLiteral(values: readonly string[]): string {
 export class PgRetrieval implements RetrievalService {
   private readonly sql: postgres.Sql;
   private readonly embedder: QueryEmbedder;
+  private readonly fuseCrossReferences: boolean;
 
   constructor(options: PgRetrievalOptions) {
     this.sql = options.sql;
     this.embedder = options.embedder;
+    this.fuseCrossReferences = options.fuseCrossReferences ?? false;
   }
 
   searchByTheme(query: string, user: User, options?: ThemeSearchOptions): Promise<ThemeSearchResult[]> {
-    return searchByTheme(this.sql, this.embedder, query, { ...options, user });
+    const search = this.fuseCrossReferences ? searchByThemeFused : searchByTheme;
+    return search(this.sql, this.embedder, query, { ...options, user });
   }
 
   async getVerse(canonicalId: CanonicalId, user: User): Promise<{ verse: CanonicalVerse; texts: VerseText[] } | null> {
