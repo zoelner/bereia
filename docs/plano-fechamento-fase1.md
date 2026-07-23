@@ -8,6 +8,10 @@
 > OQ-2: título v.0 gera linha indexável em `verse_texts`; OQ-1/4/5/7/8: defaults aceitos (JSONL
 > por-tabela + partição por livro; descarte fora-do-cânon com estatística e teto ~0,5%;
 > aramaico→`hebrew`; Strong 5-dígitos segue `null`+raw; `embeddingModel` = nome@revisão-HF).
+> **Nota de execução (OQ-7 generalizado, N6):** o achado real incluiu também estendidos de **4 dígitos**
+> G6xxx–G7xxx (71 lexemas / 363 palavras, acima do teto G5624 do dicionário openscriptures) — a mesma
+> política se aplica: `strongId:null` + `strongRaw` preservado no BUILD; teste de FK real garante 0 não
+> resolvidos. Backlog: dicionário estendido (stepbible §7).
 > Contexto: CLAUDE.md §2/§5/§6/§7/§8, ADR-000/002/003/004/005/006/007/008,
 > `docs/plano-stepbible.md` (§6 fora-de-escopo, §7 backlog).
 
@@ -241,6 +245,9 @@ colisão real — registrado para o orquestrador.
 - **N11 (data-steward) — geração do dado canônico.** Roda `build:canonical` com as fontes pinadas
   (confere sha256 do manifest), **commita `data/canonical/*.jsonl`** (a fonte de verdade), confirma que
   as contagens batem `BUILD_MANIFEST` e que o re-run dá `git diff` vazio.
+  *Desfecho na execução:* o dado foi gerado e validado conforme o nó, mas commitado no repo próprio
+  **`zoelner/bereia-data`** (decisão do dono pós-execução, ADR-009) em vez de `data/canonical/` deste
+  repo — mesmas contagens, mesmo determinismo, `git diff` auditável no repo de dados.
 
 ## 5. Verificação (por nó) — ADR-008
 
@@ -284,5 +291,35 @@ colisão real — registrado para o orquestrador.
   `\d{1,4}`; proponho apertar o **uso** (não o schema) e testar o join. Confirmar.
 - **OQ-7 (Strong estendido 5-díg.):** G20447/G20833 etc. (stepbible §7) ficam `strongId:null` +
   `strongRaw` (FK-safe, sem entrada no dicionário) — confirmar que seguem assim no fechamento.
+  *Desfecho na execução (N6):* generalizado para TODO Strong grego fora do dicionário openscriptures
+  (inclui estendidos de 4 dígitos G6xxx–G7xxx, 71 lexemas/363 palavras) — `strongId:null` + `strongRaw`,
+  validado por teste de FK contra o dicionário real.
 - **OQ-8 (carimbo `embeddingModel`):** formato `"${MODEL_NAME}@${HF_REVISION}"` (ex.: `BAAI/bge-m3@<rev>`),
   usado em `verse_texts`/derived/Postgres e na trava ADR-005 — confirmar a string exata.
+
+## 7. Backlog técnico do fechamento (levantado na execução N8–N11)
+
+Itens NÃO-bloqueantes registrados pelos workers/verifiers; nenhum reabre decisão da §2 do CLAUDE.md.
+
+- **Proveniência dos zips (N8):** para eng-kjv, eng-web, por-biblialivre e openbible-xrefs, o
+  `data/sources/manifest.json` pina o sha256 do **.zip baixado**, não do arquivo extraído que o parser
+  lê (TAHOT/TAGNT/TVTMS/strongs já pinam o extraído). Fechar a cadeia exige mudança de formato do
+  manifest (data-steward) — pinar também o sha256 do extraído.
+- **Reprodutibilidade do hash de embeddings (N9):** o hash de regressão do `embed.test.ts` assume
+  floats bit-a-bit estáveis do BGE-M3 para o MESMO build Docker; entre microarquiteturas de CPU
+  distintas (BLAS) pode divergir. Falha é ruidosa (nunca verde-falso) e coerente com ADR-005; se o
+  projeto ganhar CI multi-máquina, reavaliar a âncora (ex.: tolerância numérica documentada).
+- **FK real de `original_words.strong_id` (N10):** o schema Drizzle/migration NÃO tem
+  `.references()` de `original_words.strong_id` → `strongs.id`; a garantia hoje é a checagem de
+  aplicação no load (`crossCheckIntegrity`). Avaliar promover a FK de banco (exige `ON DELETE`
+  pensado para o dicionário) numa evolução de schema.
+- **Controle de migrations (N10):** não há `drizzle-kit`/tabela de migrations; `0000`/`0001` são
+  aplicadas com guarda por `information_schema`. Funciona para 2 migrations; formalizar controle
+  quando o schema começar a evoluir (Fase 2+).
+- **Performance de reload (N10):** load completo em tabelas vazias ≈ 18s; re-run (DELETE+INSERT)
+  ≈ 2min40s. Se reload frequente virar requisito, investigar `COPY`/`TRUNCATE` com as tabelas de
+  curadoria (`curation_log`/`reports`/`interpretations`) movidas para fora do caminho de truncagem.
+- **Reload × curadoria populada (verifier N10):** o `DELETE FROM canonical_verses` do reload FALHA por
+  FK quando `curation_log`/`reports`/`interpretations` tiverem linhas (hoje vazias na Fase 1). A
+  estratégia de reload precisa ser revisitada ANTES da Fase 5 popular essas tabelas — mesma frente do
+  item de performance acima.

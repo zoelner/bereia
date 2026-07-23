@@ -7,7 +7,9 @@ dist/
 .env
 .env.local
 
-# dados: fontes brutas e derivados ficam fora do Git (JSONL canônico é versionado)
+# dados: fontes brutas e derivados ficam fora do Git; o JSONL canônico é
+# versionado no repo próprio zoelner/bereia-data (ADR-009) — builds locais em
+# data/canonical/ não entram aqui
 # diretórios são re-incluídos para o git conseguir enxergar os LICENSE.txt
 data/sources/**
 !data/sources/.gitkeep
@@ -16,6 +18,8 @@ data/sources/**
 !data/sources/manifest.json
 data/derived/**
 !data/derived/.gitkeep
+data/canonical/**
+!data/canonical/.gitkeep
 
 # modelos / caches
 models/

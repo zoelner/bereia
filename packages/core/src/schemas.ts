@@ -49,6 +49,8 @@ export const originalWordSchema = z.object({
   /** dStrong bruto do STEPBible (letra de desambiguação + tags H9xxx que se perdem no strongId). */
   strongRaw: z.string().nullable(),
   morphology: z.string().nullable(),
+  /** Carimbo TR/NA/variante por palavra (TextType/WordType cru do TAGNT); null para TAHOT/fontes sem edição. */
+  edition: z.string().nullable(),
 });
 export type OriginalWord = z.infer<typeof originalWordSchema>;
 
