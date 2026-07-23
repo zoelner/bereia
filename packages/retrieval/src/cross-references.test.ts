@@ -116,9 +116,12 @@ async function applyMigrations(sql: postgres.Sql): Promise<void> {
 //   A -> F         (F também alcançável em 1 hop — testa "menor hop")
 //   B -> F         (caminho mais longo até F — NÃO deve aparecer no resultado)
 //   A -> E         (E só é autorizado para 'curated', não para 'public')
+//   E -> G         (G É autorizado para 'public' — prova que o bloqueio de E
+//                   corta a PONTE: G só aparece se E for alcançável primeiro)
 //
-// A=GEN_1_1 B=GEN_1_2 C=EXO_1_1 D=LEV_1_1 E=LEV_1_2 F=LEV_1_3 — ids canônicos
-// válidos (USFM), estrutura sintética, sem nenhuma afirmação teológica.
+// A=GEN_1_1 B=GEN_1_2 C=EXO_1_1 D=LEV_1_1 E=LEV_1_2 F=LEV_1_3 G=LEV_1_5 — ids
+// canônicos válidos (USFM), estrutura sintética, sem nenhuma afirmação
+// teológica.
 
 const A = "GEN_1_1";
 const B = "GEN_1_2";
@@ -126,6 +129,7 @@ const C = "EXO_1_1";
 const D = "LEV_1_1";
 const E = "LEV_1_2";
 const F = "LEV_1_3";
+const G = "LEV_1_5";
 
 const FIXTURE_VERSES: { id: string; book: string; chapter: number; verse: number }[] = [
   { id: A, book: "GEN", chapter: 1, verse: 1 },
@@ -134,6 +138,7 @@ const FIXTURE_VERSES: { id: string; book: string; chapter: number; verse: number
   { id: D, book: "LEV", chapter: 1, verse: 1 },
   { id: E, book: "LEV", chapter: 1, verse: 2 },
   { id: F, book: "LEV", chapter: 1, verse: 3 },
+  { id: G, book: "LEV", chapter: 1, verse: 5 },
 ];
 
 const FIXTURE_EDGES: { sourceId: string; targetId: string }[] = [
@@ -144,6 +149,7 @@ const FIXTURE_EDGES: { sourceId: string; targetId: string }[] = [
   { sourceId: A, targetId: F },
   { sourceId: B, targetId: F },
   { sourceId: A, targetId: E },
+  { sourceId: E, targetId: G },
 ];
 
 describe.skipIf(!databaseUp)("getCrossReferences — integração (banco de teste efêmero)", () => {
@@ -266,6 +272,22 @@ describe.skipIf(!databaseUp)("getCrossReferences — integração (banco de test
     expect(edges).toEqual([]);
   });
 
+  it("nó não autorizado não serve de ponte: G (só alcançável via E, bloqueado) não vaza para 'public', mesmo autorizado em si", async () => {
+    // G tem authorized_levels=['public'] — se aparecesse, NÃO seria por causa
+    // da própria autorização de G, e sim porque a recursão teria atravessado
+    // E (bloqueado) para chegar até ele. maxHops=2 é suficiente para alcançar
+    // G (A→E→G) SE a ponte não fosse cortada.
+    const edges = await getCrossReferences(sql, A, { user: PUBLIC_USER, maxHops: 2 });
+    expect(edges.some((edge) => edge.targetId === G)).toBe(false);
+  });
+
+  it("com E autorizado, a ponte se reabre: G aparece no hop2 (A→E→G)", async () => {
+    const bothLevelsUser: User = { id: "user-mock-4", accessLevels: ["public", "curated"] };
+    const edges = await getCrossReferences(sql, A, { user: bothLevelsUser, maxHops: 2 });
+    expect(edges).toContainEqual({ sourceId: E, targetId: G, kind: "tsk" });
+    expect(edges.some((edge) => edge.targetId === G)).toBe(true);
+  });
+
   it("ordem de saída total e estável: 2 execuções da mesma query são idênticas", async () => {
     const first = await getCrossReferences(sql, A, { user: PUBLIC_USER, maxHops: 3 });
     const second = await getCrossReferences(sql, A, { user: PUBLIC_USER, maxHops: 3 });
@@ -332,4 +354,16 @@ describe.skipIf(!realDataLoaded)("getCrossReferences — sanidade contra o compo
     const second = await getCrossReferences(realSql, "GEN_1_1", { user: PUBLIC_USER });
     expect(second).toEqual(first);
   });
+
+  it("verso-hub (GEN_1_1) com maxHops=3 responde sem estourar maxVisitedNodes e é estável em 2 execuções", async () => {
+    // GEN_1_1 é hub: maxHops=3 alcança bem mais que DEFAULT_MAX_VISITED_NODES
+    // antigo (5000) — este teste é o que teria pego a regressão do warning 1
+    // do verifier. Usa o default real (não um teto pequeno de teste) para
+    // provar que o teto de produção comporta o pior caso conhecido do corpus.
+    const first = await getCrossReferences(realSql, "GEN_1_1", { user: PUBLIC_USER, maxHops: 3 });
+    expect(first.length).toBeGreaterThan(5000);
+
+    const second = await getCrossReferences(realSql, "GEN_1_1", { user: PUBLIC_USER, maxHops: 3 });
+    expect(second).toEqual(first);
+  }, 30_000);
 });

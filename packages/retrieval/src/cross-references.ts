@@ -57,14 +57,20 @@ export const DEFAULT_MAX_HOPS = 1;
 /** Teto absoluto do plano (OQ-2) — maxHops>3 explode, nunca clampa. */
 export const MAX_HOPS_CEILING = 3;
 /**
- * Teto interno de nós visitados, default generoso (o corpus real tem ~31k
- * versos e 614.208 edges — um `maxHops=3` a partir de um verso comum não
- * chega perto disso). Existe para nunca devolver um resultado truncado sem
- * avisar: se o conjunto alcançado ultrapassa o teto, a função EXPLODE (nunca
- * corta em silêncio). Sobrescrevível via `options.maxVisitedNodes` — usado
- * pelos testes para pinar o comportamento de explosão com fixtures pequenas.
+ * Teto interno de nós visitados, default generoso. O corpus real tem ~31.218
+ * versos e 614.208 edges kind 'tsk' com fan-out alto: a partir de um verso-
+ * hub (ex.: GEN_1_1), `maxHops=3` (permitido pelo teto OQ-2) alcança
+ * legitimamente ~12.600 versos distintos — bem acima de um teto apertado.
+ * O conjunto alcançável NUNCA excede o tamanho do corpus inteiro (~31k hoje),
+ * então 40.000 cobre até um crescimento razoável do corpus sem reprovar uso
+ * legítimo, mas ainda protege contra um grafo futuro muito mais denso ou um
+ * bug de anti-ciclo que faça o conjunto alcançado explodir sem limite. Existe
+ * para nunca devolver um resultado truncado sem avisar: se o conjunto
+ * alcançado ultrapassa o teto, a função EXPLODE (nunca corta em silêncio).
+ * Sobrescrevível via `options.maxVisitedNodes` — usado pelos testes para
+ * pinar o comportamento de explosão com fixtures pequenas.
  */
-export const DEFAULT_MAX_VISITED_NODES = 5000;
+export const DEFAULT_MAX_VISITED_NODES = 40_000;
 
 export interface GetCrossReferencesOptions extends CrossReferenceOptions {
   /** Usuário do hard filter (`accessLevels`) — obrigatório, sem hardcode. */
