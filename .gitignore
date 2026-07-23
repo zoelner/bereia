@@ -18,7 +18,8 @@ data/sources/**
 !data/sources/manifest.json
 data/derived/**
 !data/derived/.gitkeep
-data/canonical/
+data/canonical/**
+!data/canonical/.gitkeep
 
 # modelos / caches
 models/
