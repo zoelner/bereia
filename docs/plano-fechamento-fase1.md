@@ -8,6 +8,10 @@
 > OQ-2: título v.0 gera linha indexável em `verse_texts`; OQ-1/4/5/7/8: defaults aceitos (JSONL
 > por-tabela + partição por livro; descarte fora-do-cânon com estatística e teto ~0,5%;
 > aramaico→`hebrew`; Strong 5-dígitos segue `null`+raw; `embeddingModel` = nome@revisão-HF).
+> **Nota de execução (OQ-7 generalizado, N6):** o achado real incluiu também estendidos de **4 dígitos**
+> G6xxx–G7xxx (71 lexemas / 363 palavras, acima do teto G5624 do dicionário openscriptures) — a mesma
+> política se aplica: `strongId:null` + `strongRaw` preservado no BUILD; teste de FK real garante 0 não
+> resolvidos. Backlog: dicionário estendido (stepbible §7).
 > Contexto: CLAUDE.md §2/§5/§6/§7/§8, ADR-000/002/003/004/005/006/007/008,
 > `docs/plano-stepbible.md` (§6 fora-de-escopo, §7 backlog).
 
@@ -284,5 +288,8 @@ colisão real — registrado para o orquestrador.
   `\d{1,4}`; proponho apertar o **uso** (não o schema) e testar o join. Confirmar.
 - **OQ-7 (Strong estendido 5-díg.):** G20447/G20833 etc. (stepbible §7) ficam `strongId:null` +
   `strongRaw` (FK-safe, sem entrada no dicionário) — confirmar que seguem assim no fechamento.
+  *Desfecho na execução (N6):* generalizado para TODO Strong grego fora do dicionário openscriptures
+  (inclui estendidos de 4 dígitos G6xxx–G7xxx, 71 lexemas/363 palavras) — `strongId:null` + `strongRaw`,
+  validado por teste de FK contra o dicionário real.
 - **OQ-8 (carimbo `embeddingModel`):** formato `"${MODEL_NAME}@${HF_REVISION}"` (ex.: `BAAI/bge-m3@<rev>`),
   usado em `verse_texts`/derived/Postgres e na trava ADR-005 — confirmar a string exata.
