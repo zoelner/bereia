@@ -80,7 +80,8 @@ describe.skipIf(!databaseUp)("getExegesis — integração real (banco de teste 
       INSERT INTO canonical_verses (id, book, chapter, verse, canon_status, theological_category)
       VALUES
         ('OBA_1_1', 'OBA', 1, 1, 'protestant', NULL),
-        ('OBA_1_2', 'OBA', 1, 2, 'deuterocanonical', NULL)
+        ('OBA_1_2', 'OBA', 1, 2, 'deuterocanonical', NULL),
+        ('OBA_1_3', 'OBA', 1, 3, 'protestant', NULL)
     `;
 
     await sql`
@@ -109,6 +110,21 @@ describe.skipIf(!databaseUp)("getExegesis — integração real (banco de teste 
       VALUES
         ('OBA_1_1', 'mock-visao-a', 'visão sintética A, sem valor teológico', NULL, NULL, false, NULL),
         ('OBA_1_1', 'mock-visao-b', 'visão sintética B, divergente de A, sem valor teológico', NULL, NULL, false, NULL)
+    `;
+
+    // 11 interpretations sintéticas em OBA_1_3, dedicadas a provar ordenação NUMÉRICA de
+    // `interpretations.id` (serial). Como a sequência do `id` é compartilhada pela tabela
+    // inteira, e OBA_1_1 já inseriu 2 linhas acima, estas caem em ids que atravessam a casa
+    // das dezenas (ex.: 3..13) — suficiente para distinguir ordenação numérica (2,3,...,13)
+    // de lexicográfica sobre `id::text` (que colocaria "10","11","12","13" antes de "3").
+    await sql`
+      INSERT INTO interpretations (canonical_id, view_label, text, tradition, source, human_reviewed, reviewed_by)
+      SELECT
+        'OBA_1_3',
+        'mock-visao-' || lpad(n::text, 2, '0'),
+        'visão sintética ' || lpad(n::text, 2, '0') || ' de ordenação, sem valor teológico',
+        NULL, NULL, false, NULL
+      FROM generate_series(1, 11) AS n
     `;
   }, 30_000);
 
@@ -174,6 +190,23 @@ describe.skipIf(!databaseUp)("getExegesis — integração real (banco de teste 
     expect(result?.texts[0]?.translation).toBe("mock-b");
   });
 
+  it("interpretations ordenam por id NUMÉRICO, não lexicográfico (>=10 linhas, atravessa a casa das dezenas)", async () => {
+    const result = await getExegesis(sql, "OBA_1_3" as CanonicalId, { authorizedLevels: ["public"] });
+    expect(result?.interpretations).toHaveLength(11);
+
+    // Ordem de inserção esperada (view_label monotônico 01..11) — se o ORDER BY caísse no
+    // ALIAS de saída (`id::text`), a ordem seria lexicográfica ("mock-visao-01", "mock-visao-10",
+    // "mock-visao-11", "mock-visao-02", ...), quebrando esta asserção.
+    expect(result?.interpretations.map((i) => i.viewLabel)).toEqual(
+      Array.from({ length: 11 }, (_, index) => `mock-visao-${String(index + 1).padStart(2, "0")}`),
+    );
+
+    const ids = result?.interpretations.map((i) => Number(i.id)) ?? [];
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
+    // ids são a PK serial inteira — confere que a coluna atravessou a casa das dezenas de fato.
+    expect(Math.max(...ids)).toBeGreaterThanOrEqual(10);
+  });
+
   it("ordenação estável: duas execuções da mesma consulta devolvem a mesma ordem", async () => {
     const first = await getExegesis(sql, "OBA_1_1" as CanonicalId, { authorizedLevels: ["public", "curated"] });
     const second = await getExegesis(sql, "OBA_1_1" as CanonicalId, { authorizedLevels: ["public", "curated"] });
@@ -203,9 +236,11 @@ describe.skipIf(!realDataLoaded)("getExegesis — sanidade contra o dado real ca
     await sql.end();
   });
 
-  it("GEN_1_1 tem 3 texts e originalWords não-vazias com joins resolvidos", async () => {
+  it("GEN_1_1 tem 3 texts (KJV/BLIVRE/WEB, Fase 1) e originalWords não-vazias com joins resolvidos", async () => {
     const result = await getExegesis(sql, "GEN_1_1" as CanonicalId, { authorizedLevels: ["public", "curated"] });
     expect(result).not.toBeNull();
+    // 3 = número de traduções carregadas pela Fase 1 (KJV, BLIVRE, WEB) — não é mágico, é o
+    // manifest atual de `data/canonical/verse_texts/` para GEN_1_1 (ver docs/plano-fechamento-fase1.md).
     expect(result?.texts.length).toBe(3);
     expect(result?.originalWords.length).toBeGreaterThan(0);
     const withStrong = result?.originalWords.filter((w) => w.strong !== undefined) ?? [];

@@ -31,8 +31,27 @@
  * Toda ordenação é explícita na SQL (nunca depende de ordem física de disco):
  * `verse_texts` por `translation` (chave única dentro do verso, parte da PK
  * composta); `original_words` por `position` (ordem lexical original);
- * `interpretations` por `id` (chave estável, monotônica por inserção — ordem
- * documentada, não arbitrária).
+ * `interpretations` por `id` NUMÉRICO (PK `serial`), chave total e estável —
+ * ordem crescente de criação da linha. Cuidado: a coluna é projetada como
+ * `id::text AS id` (contrato Zod usa string, ADR-004), então o `ORDER BY`
+ * precisa ser QUALIFICADO (`interpretations.id`), nunca o nome nu `id` — no
+ * Postgres, um `ORDER BY` não qualificado que colide com um alias de saída
+ * resolve para o ALIAS, e ordenar por `id::text` seria lexicográfico
+ * ("1","10","2",…), não numérico. `interpretations.id` sempre refere à coluna
+ * de origem (inteira), imune a essa armadilha.
+ *
+ * ## `texts` vazio vs. verso inexistente (leitura do shape)
+ * `getExegesis` só devolve `null` quando o VERSO não existe no cânon
+ * autorizado (`canonical_verses` sem linha, ou `canon_status` fora do MVP —
+ * ver acima). Um verso existente cujas `verse_texts` foram TODAS excluídas
+ * pelo hard filter de `authorized_levels` ainda devolve um objeto não-nulo
+ * com `texts: []` — não há coluna de controle de acesso por VERSO no schema
+ * atual (`authorized_levels` vive em `verse_texts`, não em
+ * `canonical_verses`), então "nenhum texto autorizado" e "verso inexistente"
+ * são estados distintos por construção. (O docstring do port `getExegesis`
+ * em `core/retrieval.ts` fala em "verso ... não autorizado para o `user` →
+ * `null`" de forma um pouco mais ampla que este comportamento — retoque
+ * pendente para o N6, que é quem compõe o port; fora do escopo deste módulo.)
  */
 
 import postgres from "postgres";
@@ -156,7 +175,7 @@ export async function getExegesis(
       SELECT id::text AS id, canonical_id, view_label, text, tradition, source, human_reviewed, reviewed_by
       FROM interpretations
       WHERE canonical_id = ${canonicalId}
-      ORDER BY id
+      ORDER BY interpretations.id
     `,
   ]);
 
