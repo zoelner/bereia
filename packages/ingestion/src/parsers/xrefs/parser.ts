@@ -106,6 +106,14 @@ interface UsfmRef {
   verse: number;
 }
 
+/** Ordem canônica total: livro (`USFM_BOOKS`) → capítulo → verso. */
+function compareUsfmRef(a: UsfmRef, b: UsfmRef): number {
+  const bookDiff = (BOOK_ORDER.get(a.book) as number) - (BOOK_ORDER.get(b.book) as number);
+  if (bookDiff !== 0) return bookDiff;
+  if (a.chapter !== b.chapter) return a.chapter - b.chapter;
+  return a.verse - b.verse;
+}
+
 /** `null` = endpoint fora do cânon de 66 (descarte OQ-4). Token novo explode. */
 function parseRef(token: string, lineNumber: number): UsfmRef | null {
   const match = REF_RE.exec(token);
@@ -201,7 +209,13 @@ export function parseXrefs(tsv: string, options: ParseXrefsOptions = {}): XrefPa
           edgeKeys.add(`${source}\t${target}`);
         }
       } else {
-        // Inter-capítulo/inter-livro: delega a expansão a N7.
+        // Inter-capítulo/inter-livro: delega a expansão a N7. Guarda simétrica
+        // ao ramo intra-capítulo — range decrescente é dado inválido e explode
+        // AQUI (defesa em profundidade; N7 também recusa, mas a linha de origem
+        // só é conhecida neste parser).
+        if (compareUsfmRef(end, start) < 0) {
+          throw new Error(`linha ${lineNumber}: range decrescente: "${toToken}"`);
+        }
         const target = toId(start);
         const targetEnd = toId(end);
         deferredKeys.add(`${source}\t${target}\t${targetEnd}`);

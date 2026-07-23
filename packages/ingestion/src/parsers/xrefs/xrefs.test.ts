@@ -88,6 +88,14 @@ describe("parseXrefs — expansão e determinismo", () => {
     ]);
   });
 
+  it("range inter-capítulo DECRESCENTE explode (simétrico ao intra-capítulo)", () => {
+    expect(() => parseXrefs(tsv("Gen.2.1\tGen.12.1-Gen.11.32\t3"))).toThrow(/range decrescente/);
+  });
+
+  it("range inter-livro DECRESCENTE explode", () => {
+    expect(() => parseXrefs(tsv("Num.3.1\tNum.1.1-Lev.27.34\t2"))).toThrow(/range decrescente/);
+  });
+
   it("self-loop de expansão intra-capítulo é MANTIDO e contado (N7 remove)", () => {
     const { edges, stats } = parseXrefs(tsv("Gen.1.2\tGen.1.1-Gen.1.3\t4"));
     expect(edges.map((e) => e.targetId)).toEqual(["GEN_1_1", "GEN_1_2", "GEN_1_3"]);

@@ -357,6 +357,19 @@ describe("writeJsonl", () => {
   });
 });
 
+describe("writers por tabela: validam VALORES via Zod antes de gravar (fonte de verdade)", () => {
+  it("writeCanonicalVerses recusa valor inválido mesmo com o shape de chaves correto", () => {
+    // Tipo estático não prova o runtime: verse negativo passa no TS, nunca no Zod.
+    const invalid = mockVerse("GEN", 1, -1);
+    expect(() => writeCanonicalVerses([invalid])).toThrow(/canonical_verses.*registro 0 inválido/);
+  });
+
+  it("writeVerseTexts recusa translation vazia", () => {
+    const invalid: VerseText = { ...mockVerseText("GEN_1_1", "kjv"), translation: "" };
+    expect(() => writeVerseTexts([invalid])).toThrow(/verse_texts.*registro 0 inválido/);
+  });
+});
+
 describe("writeVerseTexts: canonicaliza arrays-conjunto (thematicTags, authorizedLevels)", () => {
   it("ordena thematicTags e authorizedLevels ordinalmente, independente da ordem de inserção", () => {
     const row = mockVerseText("GEN_1_1", "kjv", {

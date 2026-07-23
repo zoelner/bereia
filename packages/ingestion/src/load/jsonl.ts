@@ -107,7 +107,26 @@ export function readJsonl<T>(content: string, schema: ZodType<T>): T[] {
 
 // --- Writers/readers concretos por tabela (plano §3.3, layout OQ-1) -------
 
+/**
+ * Valida VALORES de cada registro contra o schema Zod antes de gravar — o
+ * JSONL é a FONTE DE VERDADE (CLAUDE.md §2): nenhum valor inválido pode
+ * alcançá-la, mesmo vindo de um builder tipado (o tipo estático não prova o
+ * runtime; Zod em toda fronteira, §7). A checagem de CHAVES continua no
+ * `serializeJsonLine` (vocabulário fechado).
+ */
+function validateAll<T>(records: readonly T[], schema: ZodType<T>, table: string): void {
+  records.forEach((record, index) => {
+    const result = schema.safeParse(record);
+    if (!result.success) {
+      throw new Error(
+        `write ${table}: registro ${index} inválido para gravação na fonte de verdade — ${result.error.message}`,
+      );
+    }
+  });
+}
+
 export function writeCanonicalVerses(records: readonly CanonicalVerse[]): string {
+  validateAll(records, canonicalVerseSchema, "canonical_verses");
   return writeJsonl(records, CANONICAL_VERSE_KEYS);
 }
 export function readCanonicalVerses(content: string): CanonicalVerse[] {
@@ -133,6 +152,7 @@ export function writeVerseTexts(records: readonly VerseText[]): string {
     thematicTags: sortedArrayCopy(record.thematicTags),
     authorizedLevels: sortedArrayCopy(record.authorizedLevels),
   }));
+  validateAll(canonicalized, verseTextSchema, "verse_texts");
   return writeJsonl(canonicalized, VERSE_TEXT_KEYS);
 }
 export function readVerseTexts(content: string): VerseText[] {
@@ -140,6 +160,7 @@ export function readVerseTexts(content: string): VerseText[] {
 }
 
 export function writeOriginalWords(records: readonly OriginalWord[]): string {
+  validateAll(records, originalWordSchema, "original_words");
   return writeJsonl(records, ORIGINAL_WORD_KEYS);
 }
 export function readOriginalWords(content: string): OriginalWord[] {
@@ -147,6 +168,7 @@ export function readOriginalWords(content: string): OriginalWord[] {
 }
 
 export function writeStrongsEntries(records: readonly StrongsEntry[]): string {
+  validateAll(records, strongsEntrySchema, "strongs");
   return writeJsonl(records, STRONGS_ENTRY_KEYS);
 }
 export function readStrongsEntries(content: string): StrongsEntry[] {
@@ -154,6 +176,7 @@ export function readStrongsEntries(content: string): StrongsEntry[] {
 }
 
 export function writeEdges(records: readonly Edge[]): string {
+  validateAll(records, edgeSchema, "edges");
   return writeJsonl(records, EDGE_KEYS);
 }
 export function readEdges(content: string): Edge[] {

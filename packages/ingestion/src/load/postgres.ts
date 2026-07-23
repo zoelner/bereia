@@ -473,7 +473,11 @@ export async function loadPostgres(options: LoadPostgresOptions): Promise<LoadPo
       ) AS exists
     `;
     if (canonicalVersesCheck[0]?.exists !== true) {
-      await sql.unsafe(readMigrationFile(migrationsDir, "0000_init.sql"));
+      // Migration multi-statement dentro de transação: DDL do Postgres é
+      // transacional, então falha no meio faz rollback COMPLETO e o gate de
+      // idempotência (existência do artefato) permanece consistente — sem
+      // schema pela metade que a re-execução pularia.
+      await sql.begin((tx) => tx.unsafe(readMigrationFile(migrationsDir, "0000_init.sql")));
     }
 
     const editionColumnCheck = await sql<{ exists: boolean }[]>`
@@ -483,7 +487,7 @@ export async function loadPostgres(options: LoadPostgresOptions): Promise<LoadPo
       ) AS exists
     `;
     if (editionColumnCheck[0]?.exists !== true) {
-      await sql.unsafe(readMigrationFile(migrationsDir, "0001_original_words_edition.sql"));
+      await sql.begin((tx) => tx.unsafe(readMigrationFile(migrationsDir, "0001_original_words_edition.sql")));
     }
 
     // --- apaga + regrava numa única transação (idempotente) -----------------
@@ -551,7 +555,10 @@ async function main(): Promise<void> {
   const embeddingsFile = process.env["EMBEDDINGS_FILE"];
   const migrationsDir = process.env["MIGRATIONS_DIR"];
 
-  process.stdout.write(`load:postgres — DATA_DIR=${dataDir} DATABASE_URL=${databaseUrl}\n`);
+  // Nunca ecoar a DATABASE_URL: ela carrega credencial (usuário:senha) e
+  // stdout vaza para logs/CI. Só host e banco, sem userinfo.
+  const dbTarget = new URL(databaseUrl);
+  process.stdout.write(`load:postgres — DATA_DIR=${dataDir} banco=${dbTarget.host}${dbTarget.pathname}\n`);
   const result = await loadPostgres({
     dataDir,
     databaseUrl,

@@ -115,12 +115,19 @@ export interface EmbedderClient {
   embed(texts: readonly string[]): Promise<EmbedResponse>;
 }
 
-async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
+/** Timeout do `/health` (checagem rápida): sidecar pendurado vira erro, não hang. */
+export const HEALTH_TIMEOUT_MS = 10_000;
+/** Timeout de um lote de `/embed` — generoso (BGE-M3 em CPU), mas finito. */
+export const EMBED_TIMEOUT_MS = 600_000;
+
+async function fetchJson(url: string, timeoutMs: number, init?: RequestInit): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(url, init);
+    response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   } catch (error) {
-    throw new Error(`embed: falha de rede ao chamar ${url} — ${(error as Error).message}`);
+    throw new Error(
+      `embed: falha de rede ao chamar ${url} (timeout ${timeoutMs}ms) — ${(error as Error).message}`,
+    );
   }
   if (!response.ok) {
     const body = await response.text().catch(() => "");
@@ -133,7 +140,7 @@ async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
 export function createHttpEmbedderClient(embedderUrl: string): EmbedderClient {
   return {
     async health() {
-      const body = await fetchJson(`${embedderUrl}/health`);
+      const body = await fetchJson(`${embedderUrl}/health`, HEALTH_TIMEOUT_MS);
       return healthResponseSchema.parse(body);
     },
     async embed(texts) {
@@ -145,7 +152,7 @@ export function createHttpEmbedderClient(embedderUrl: string): EmbedderClient {
           `embed: lote de ${texts.length} textos excede o teto do sidecar (${MAX_BATCH_SIZE}) — ajuste batchSize`,
         );
       }
-      const body = await fetchJson(`${embedderUrl}/embed`, {
+      const body = await fetchJson(`${embedderUrl}/embed`, EMBED_TIMEOUT_MS, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ texts }),

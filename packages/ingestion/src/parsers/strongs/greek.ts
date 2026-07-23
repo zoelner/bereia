@@ -163,7 +163,9 @@ export function parseStrongsGreek(xml: string): StrongsEntry[] {
     draft.definitionBuffer += text;
   };
 
-  parser.write(xml).close();
+  // BOM inicial removido como no parser hebraico — simetria entre as duas
+  // fontes da mesma família (o sax strict tropeça em U+FEFF antes da raiz).
+  parser.write(xml.replace(/^﻿/, "")).close();
 
   if (entries.length === 0) {
     throw new StrongsParseError("grego: nenhuma entrada encontrada — arquivo errado?");
