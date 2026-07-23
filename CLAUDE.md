@@ -17,7 +17,7 @@ Assistente de estudo bíblico e preparação de pregações com:
 | Banco | **Postgres + pgvector, banco único** (vetores + relacional + curadoria). Busca **exata** (sem índice ANN) com tie-break por ID: `ORDER BY embedding <=> $q, id` |
 | Embeddings | **BGE-M3** local (CPU), sidecar Python FastAPI. Pesos/revisão pinados |
 | Grafo | Relacional (tabela `edges`), cadeias via recursive CTE. Neo4j só se consultas >3 saltos virarem requisito validado |
-| Fonte de verdade | **JSONL em `data/canonical/` versionado em Git**. Postgres é projeção descartável/reconstruível. Embeddings derivados ficam fora do Git |
+| Fonte de verdade | **JSONL canônico versionado em Git no repo próprio `zoelner/bereia-data`** (ADR-009; layout na raiz `canonical/`, ligação por `CANONICAL_DIR`/`OUT_DIR`). Postgres é projeção descartável/reconstruível. Embeddings derivados ficam fora do Git |
 | Curadoria | Log append-only (`curation.jsonl`): `{canonical_id, field, new_value, author, timestamp}`. Edições humanas escrevem na fonte de verdade; flag `human_reviewed` + `reviewed_by`. Fila priorizada por uso/reports/risco doutrinário/centralidade TSK |
 | Cânon | **66 livros (39 AT + 27 NT)**. Enum `canon_status` ('protestant' \| 'deuterocanonical') existe desde já; deuterocanônicos fora do MVP |
 | Versificação-mestre | **Inglesa/KJV**, normalização via STEPBible TVTMS no parser, ANTES de gravar JSONL. Decisão quase irreversível — documentar no README |

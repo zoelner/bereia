@@ -16,7 +16,7 @@ Requisitos: Node ≥ 22, Docker. Copie `.env.example` para `.env` se precisar al
 
 ## Arquitetura em uma olhada
 
-- **Fonte de verdade:** JSONL em `data/canonical/`, versionado em Git. O Postgres é uma projeção descartável e reconstruível.
+- **Fonte de verdade:** JSONL canônico versionado em Git no repo [`bereia-data`](https://github.com/zoelner/bereia-data) (ADR-009). O Postgres é uma projeção descartável e reconstruível. Para trabalhar com o dado publicado: `git clone https://github.com/zoelner/bereia-data ../bereia-data` e `CANONICAL_DIR=../bereia-data/canonical` no `.env`; sem isso, os CLIs usam `data/canonical/` local (gitignorado), regenerável com `pnpm --filter @bereia/ingestion build:canonical`.
 - **Retrieval:** Postgres + pgvector em banco único, busca **exata** (sem ANN) com tie-break por ID — mesmo input, mesmos versículos, sempre.
 - **Embeddings:** BGE-M3 local (CPU) via sidecar Python (`embedder/`), com modelo e revisão pinados.
 - **Grafo de referências:** relacional (`edges`), cadeias via recursive CTE.
@@ -27,7 +27,7 @@ packages/core       # domínio puro: schemas Zod, schema Drizzle, contrato de re
 packages/ingestion  # parsers (USFX, STEPBible TSV, TVTMS), embed em lote, load
 apps/mcp-server     # adaptador fino sobre o core
 embedder/           # sidecar FastAPI + sentence-transformers/BGE-M3
-data/               # sources/ (bruto), canonical/ (JSONL no Git), derived/ (fora do Git)
+data/               # sources/ (bruto) e derived/ (fora do Git); canonical/ = build local (repo oficial: bereia-data)
 docs/               # plano de fases, decisões (ADRs), mapa de fontes, curadoria
 ```
 
@@ -37,7 +37,7 @@ Documentadas em [`docs/decisoes.md`](docs/decisoes.md). As que você precisa sab
 
 1. **ID canônico** `BOOK_CHAPTER_VERSE` com códigos de livro **USFM** (ex.: `MAT_5_39`).
 2. **Versificação-mestre inglesa/KJV**, normalizada via STEPBible TVTMS **antes** de gravar qualquer JSONL.
-3. **Nomes de campo do JSONL em inglês** (`canonical_id`, `human_reviewed`, …) — o JSONL é fonte de verdade versionada.
+3. **Nomes de campo do JSONL em inglês** (`canonical_id`, `human_reviewed`, …) — o JSONL é fonte de verdade versionada (repo [`bereia-data`](https://github.com/zoelner/bereia-data)).
 
 ## Licença
 

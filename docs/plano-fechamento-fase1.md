@@ -245,6 +245,9 @@ colisão real — registrado para o orquestrador.
 - **N11 (data-steward) — geração do dado canônico.** Roda `build:canonical` com as fontes pinadas
   (confere sha256 do manifest), **commita `data/canonical/*.jsonl`** (a fonte de verdade), confirma que
   as contagens batem `BUILD_MANIFEST` e que o re-run dá `git diff` vazio.
+  *Desfecho na execução:* o dado foi gerado e validado conforme o nó, mas commitado no repo próprio
+  **`zoelner/bereia-data`** (decisão do dono pós-execução, ADR-009) em vez de `data/canonical/` deste
+  repo — mesmas contagens, mesmo determinismo, `git diff` auditável no repo de dados.
 
 ## 5. Verificação (por nó) — ADR-008
 
