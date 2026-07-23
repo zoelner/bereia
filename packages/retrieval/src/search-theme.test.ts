@@ -97,6 +97,16 @@ describe("searchByTheme — validação de entrada (unit, sem rede/DB)", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("limit inválido explode ANTES de qualquer embed (paridade com query/accessLevels)", async () => {
+    const { embedder, calls } = makeFixedQueryEmbedder(axisVector(0));
+    const fakeSql = (() => Promise.resolve([])) as unknown as postgres.Sql;
+
+    await expect(
+      searchByTheme(fakeSql, embedder, "graça", { user: makeUser(["public"]), limit: 0 }),
+    ).rejects.toThrow(/limit/);
+    expect(calls).toHaveLength(0);
+  });
+
   it("embedder fake injetado é chamado exatamente 1× por busca", async () => {
     const { embedder, calls } = makeFixedQueryEmbedder(axisVector(0));
     let sqlCalls = 0;

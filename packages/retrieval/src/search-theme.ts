@@ -212,6 +212,11 @@ export async function searchByTheme(
         "devolveria nenhum texto por definição; passe ao menos um nível (bug de chamada, não deveria acontecer)",
     );
   }
+  // Validado ANTES do embed (paridade com as checagens de query/accessLevels
+  // acima): um `limit` inválido não deveria custar uma chamada ao sidecar no
+  // caminho de erro. `scoreVersesByVector` valida de novo (defensivo, para
+  // quem chamar o helper diretamente) — redundante aqui, mas barato.
+  resolveLimit("searchByTheme", options.limit);
 
   const vector = await embedder.embedQuery(query);
   const vectorLiteral = formatVectorLiteral(vector);
