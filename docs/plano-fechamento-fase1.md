@@ -316,3 +316,7 @@ Itens NÃO-bloqueantes registrados pelos workers/verifiers; nenhum reabre decis�
 - **Performance de reload (N10):** load completo em tabelas vazias ≈ 18s; re-run (DELETE+INSERT)
   ≈ 2min40s. Se reload frequente virar requisito, investigar `COPY`/`TRUNCATE` com as tabelas de
   curadoria (`curation_log`/`reports`/`interpretations`) movidas para fora do caminho de truncagem.
+- **Reload × curadoria populada (verifier N10):** o `DELETE FROM canonical_verses` do reload FALHA por
+  FK quando `curation_log`/`reports`/`interpretations` tiverem linhas (hoje vazias na Fase 1). A
+  estratégia de reload precisa ser revisitada ANTES da Fase 5 popular essas tabelas — mesma frente do
+  item de performance acima.
